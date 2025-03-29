@@ -1,0 +1,48 @@
+{
+  "id": "OqG4Xq0hLck_20250330_004813_20250330_004813",
+  "video_name": "OqG4Xq0hLck_20250330_004813",
+  "timestamp": "20250330_004813",
+  "analysis": {
+    "metrics": {
+      "Performance Metrics": {
+        "Attention Score": "80",
+        "Engagement Potential": "85",
+        "Watch Time Retention": "80%",
+        "Key Strengths": [
+          "Clear product demonstration",
+          "Visually appealing results",
+          "Fast-paced editing suitable for Shorts",
+          "Relatable beauty topic"
+        ],
+        "Improvement Suggestions": [
+          "Add text overlays identifying the product",
+          "Include subtitles/captions for accessibility",
+          "Consider using trending audio (optional)"
+        ]
+      },
+      "Detailed Analysis": {
+        "In-depth Video Analysis": {
+          "Hook": "The video starts immediately by showing the hair tool in action, grabbing attention with the styling process.",
+          "Editing": "Quick cuts and efficient pacing effectively showcase the product usage and results within the short timeframe.",
+          "Tonality": "Upbeat and positive visual tone, conveyed through the background music and the satisfying transformation.",
+          "Core Strengths": {
+            "Visuals": "Clear, well-lit footage focusing on the product and its effect on the hair.",
+            "Content": "Straightforward and easy-to-understand demonstration of a hair waver.",
+            "Pacing": "Well-suited for the Shorts format, maintaining viewer interest throughout.",
+            "Value": "Clearly demonstrates a quick method to achieve a popular hairstyle (wavy hair).",
+            "CTA": "Implicit call-to-action to consider or inquire about the featured product."
+          },
+          "Viral Potential": {
+            "Visuals": "Satisfying transformation and aesthetically pleasing result contribute to visual appeal.",
+            "Emotion": "Evokes feelings of satisfaction, aspiration (for easy styling), and interest.",
+            "Shareability": "High shareability potential among users interested in beauty, hair styling, and product demos.",
+            "Relatability": "Connects with a broad audience interested in hair care and styling solutions.",
+            "Uniqueness": "While hair tutorials are common, the clear demonstration and quick format are effective but not entirely unique."
+          }
+        }
+      }
+    },
+    "detailed_analysis": "```json\n{\n    \"Performance Metrics\": {\n        \"Attention Score\": \"80\",\n        \"Engagement Potential\": \"85\",\n        \"Watch Time Retention\": \"80%\",\n        \"Key Strengths\": [\n            \"Clear product demonstration\",\n            \"Visually appealing results\",\n            \"Fast-paced editing suitable for Shorts\",\n            \"Relatable beauty topic\"\n        ],\n        \"Improvement Suggestions\": [\n            \"Add text overlays identifying the product\",\n            \"Include subtitles/captions for accessibility\",\n            \"Consider using trending audio (optional)\"\n        ]\n    },\n    \"Detailed Analysis\": {\n        \"In-depth Video Analysis\": {\n            \"Hook\": \"The video starts immediately by showing the hair tool in action, grabbing attention with the styling process.\",\n            \"Editing\": \"Quick cuts and efficient pacing effectively showcase the product usage and results within the short timeframe.\",\n            \"Tonality\": \"Upbeat and positive visual tone, conveyed through the background music and the satisfying transformation.\",\n            \"Core Strengths\": {\n                \"Visuals\": \"Clear, well-lit footage focusing on the product and its effect on the hair.\",\n                \"Content\": \"Straightforward and easy-to-understand demonstration of a hair waver.\",\n                \"Pacing\": \"Well-suited for the Shorts format, maintaining viewer interest throughout.\",\n                \"Value\": \"Clearly demonstrates a quick method to achieve a popular hairstyle (wavy hair).\",\n                \"CTA\": \"Implicit call-to-action to consider or inquire about the featured product.\"\n            },\n            \"Viral Potential\": {\n                \"Visuals\": \"Satisfying transformation and aesthetically pleasing result contribute to visual appeal.\",\n                \"Emotion\": \"Evokes feelings of satisfaction, aspiration (for easy styling), and interest.\",\n                \"Shareability\": \"High shareability potential among users interested in beauty, hair styling, and product demos.\",\n                \"Relatability\": \"Connects with a broad audience interested in hair care and styling solutions.\",\n                \"Uniqueness\": \"While hair tutorials are common, the clear demonstration and quick format are effective but not entirely unique.\"\n            }\n        }\n    }\n}\n```",
+    "video_url": "https://www.youtube.com/shorts/OqG4Xq0hLck"
+  }
+}
