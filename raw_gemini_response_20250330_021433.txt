@@ -1,0 +1,41 @@
+=== Raw Gemini Response ===
+
+{
+    "Performance Metrics": {
+        "Attention Score": "92",
+        "Engagement Potential": "95",
+        "Watch Time Retention": "85%",
+        "Key Strengths": [
+            "Features globally recognized athletes (Messi, Neymar, Ramos)",
+            "High appeal to football fans",
+            "Simple, easily shareable format"
+        ],
+        "Improvement Suggestions": [
+            "Ensure highest possible video resolution",
+            "Consider adding minimal context (e.g., training session type)"
+        ]
+    },
+    "Detailed Analysis": {
+        "In-depth Video Analysis": {
+            "Hook": "The video immediately hooks viewers by showing iconic football stars Messi, Neymar, and Ramos interacting during a training session.",
+            "Editing": "Basic editing with text overlays identifying players. Effective use of highlighting (circle, arrow) to draw attention.",
+            "Tonality": "Casual and observational, showcasing players in a relaxed training environment. Background music adds to the atmosphere.",
+            "Core Strengths": {
+                "Visuals": "Clear footage showcasing recognizable star players.",
+                "Content": "Unique content showing interaction and skill between famous footballers.",
+                "Pacing": "Short, concise, and maintains viewer interest throughout.",
+                "Value": "Offers fans a behind-the-scenes glimpse of player interactions.",
+                "CTA": "Implicit call-to-action for fans to react, comment, and share based on star power."
+            },
+            "Viral Potential": {
+                "Visuals": "Features extremely popular and globally recognized faces.",
+                "Emotion": "Evokes excitement, curiosity, and engagement among football enthusiasts.",
+                "Shareability": "High shareability due to the fame of the individuals involved.",
+                "Relatability": "Connects strongly with the target audience of football fans.",
+                "Uniqueness": "Captures a specific moment of interaction between these particular stars."
+            }
+        }
+    }
+}
+
+=== End of Response ===

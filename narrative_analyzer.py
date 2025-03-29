@@ -155,8 +155,8 @@ def extract_json_from_response(response_text):
                 raise ValueError("No JSON found in response")
             json_str = json_match.group()
         
-        # Parse the JSON
-        data = json.loads(json_str)
+        # Parse the JSON with more lenient settings
+        data = json.loads(json_str, strict=False)
         
         # Validate required fields
         required_fields = [
@@ -194,7 +194,14 @@ def extract_json_from_response(response_text):
     except json.JSONDecodeError as e:
         print(f"JSON decode error: {str(e)}")
         print(f"Attempted to parse: {json_str if 'json_str' in locals() else 'No JSON string found'}")
-        raise ValueError(f"Invalid JSON in response: {str(e)}")
+        # Try to extract structured data when JSON parsing fails
+        try:
+            return {
+                "analysis": extract_structured_data(response_text),
+                "detailed_text": response_text
+            }
+        except Exception as e2:
+            raise ValueError(f"Invalid JSON in response: {str(e)}")
     except Exception as e:
         print(f"Error processing response: {str(e)}")
         print(f"Response text: {response_text}")
@@ -211,7 +218,7 @@ def analyze_video_with_gemini(path_or_url, is_url_prompt=False):
 
         if is_url_prompt:
             print("\nProcessing URL analysis...")
-            # Format the request exactly like test.py
+            # Format the request for URL
             contents = [
                 types.Content(
                     role="user",
@@ -220,24 +227,39 @@ def analyze_video_with_gemini(path_or_url, is_url_prompt=False):
                             file_uri=path_or_url,
                             mime_type="video/*",
                         ),
+                    ],
+                ),
+                types.Content(
+                    role="user",
+                    parts=[
                         types.Part.from_text(text=_build_analysis_prompt()),
                     ],
                 ),
             ]
         else:
             print("\nProcessing file analysis...")
-            # For files, we need to upload first
-            video_file = upload_to_gemini(path_or_url)
-            wait_for_files_active([video_file])
+            # For files, use the file path directly
+            mime_type = get_video_mime_type(path_or_url)
+            # Upload the file using the correct method
+            files = [
+                client.files.upload(file=path_or_url),
+            ]
+            print(f"Uploaded file as: {files[0].uri}")
             
+            # Format the request using the uploaded file
             contents = [
                 types.Content(
                     role="user",
                     parts=[
                         types.Part.from_uri(
-                            file_uri=video_file.uri,
-                            mime_type="video/*",
+                            file_uri=files[0].uri,
+                            mime_type=mime_type,
                         ),
+                    ],
+                ),
+                types.Content(
+                    role="user",
+                    parts=[
                         types.Part.from_text(text=_build_analysis_prompt()),
                     ],
                 ),

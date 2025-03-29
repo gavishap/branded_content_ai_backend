@@ -271,6 +271,57 @@ class DashboardProcessor:
             }
         }
     
+    def _get_default_metrics(self):
+        """Returns default metrics when conversion fails."""
+        return {
+            "hook_effectiveness": {
+                "overall_score": 70,
+                "attention_grab": 70,
+                "curiosity_gap": 70,
+                "relevance": 70,
+                "memorability": 70,
+                "reasoning": "Default value due to processing error"
+            },
+            "editing_quality": {
+                "overall_score": 70,
+                "pacing": 70,
+                "visual_coherence": 70,
+                "technical_quality": 70,
+                "engagement_impact": 70,
+                "reasoning": "Default value due to processing error"
+            },
+            "voice_tonality": {
+                "overall_score": 70,
+                "clarity": 70,
+                "energy_level": 70,
+                "authenticity": 70,
+                "audience_match": 70,
+                "reasoning": "Default value due to processing error"
+            },
+            "viral_metrics": {
+                "viral_probability": 70,
+                "visuals": 70,
+                "emotional_connection": 70,
+                "shareability": 70,
+                "relatability": 70,
+                "uniqueness": 70,
+                "reasoning": "Default value due to processing error"
+            },
+            "social_metrics": {
+                "visual_appeal": 70,
+                "content_quality": 70,
+                "pacing": 70,
+                "value_prop": 70,
+                "cta_effectiveness": 70,
+                "platform_fit": {
+                    "tiktok": 70,
+                    "instagram": 70,
+                    "youtube_shorts": 70
+                },
+                "reasoning": "Default value due to processing error"
+            }
+        }
+    
     @staticmethod
     def get_trending_metrics(analyses: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
