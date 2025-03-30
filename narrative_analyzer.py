@@ -29,19 +29,34 @@ def upload_to_gemini(path, mime_type=None):
     return file
 
 def wait_for_files_active(files):
-    """Waits for the given files to be active.
-    """
+    """Waits for the given files to be active."""
     print("Waiting for file processing...")
-    for name in (file.name for file in files):
-        file = client.get_file(name)
-        while file.state.name == "PROCESSING":
-            print(".", end="", flush=True)
-            time.sleep(10)
-            file = client.get_file(name)
-        if file.state.name != "ACTIVE":
-            raise Exception(f"File {file.name} failed to process")
-    print("...all files ready")
-    print()
+    max_attempts = 6  # Reduced to 1 minute max (6 attempts * 10 seconds)
+    attempt = 0
+    
+    for file in files:
+        while attempt < max_attempts:
+            try:
+                # Get file status directly from the file object
+                if file.state == "ACTIVE":
+                    print("\nFile is active!")
+                    return
+                elif file.state == "FAILED":
+                    raise Exception(f"File {file.name} failed to process")
+                
+                print(".", end="", flush=True)
+                time.sleep(10)
+                attempt += 1
+                
+                # Refresh the file status using the correct method
+                if attempt % 2 == 0:  # Check more frequently
+                    file = client.get_file(name=file.name)
+                    
+            except Exception as e:
+                print(f"\nError checking file status: {str(e)}")
+                raise Exception(f"File processing error: {str(e)}")
+    
+    raise Exception("File processing timed out after 1 minute")
 
 def get_video_mime_type(file_path: Union[str, Path]) -> str:
     """
@@ -236,83 +251,143 @@ def analyze_video_with_gemini(path_or_url, is_url_prompt=False):
                     ],
                 ),
             ]
+            
+            # Configure generation config
+            generate_content_config = types.GenerateContentConfig(
+                response_mime_type="application/json",
+            )
+
+            # Save the raw response to a file
+            timestamp = time.strftime("%Y%m%d_%H%M%S")
+            raw_filename = f"raw_gemini_url_response_{timestamp}.txt"
+            
+            with open(raw_filename, "w", encoding="utf-8") as f:
+                f.write("=== Raw Gemini URL Response ===\n\n")
+                
+                try:
+                    # Use the generate_content_stream
+                    print("Sending URL request to Gemini...")
+                    for chunk in client.models.generate_content_stream(
+                        model=model,
+                        contents=contents,
+                        config=generate_content_config,
+                    ):
+                        if chunk.text:
+                            f.write(chunk.text)
+                            print(chunk.text, end="")  # Print to console as well
+                            f.flush()  # Make sure it's written immediately
+                except Exception as e:
+                    error_msg = f"\n\nError during URL generation: {str(e)}"
+                    f.write(error_msg)
+                    print(error_msg)
+                
+                f.write("\n\n=== End of URL Response ===")
+            
+            print(f"\nSaved raw URL response to: {raw_filename}")
+            
+            # Load the file and return its content
+            with open(raw_filename, "r", encoding="utf-8") as f:
+                raw_content = f.read()
+            
+            # Try to extract JSON from the raw content
+            try:
+                result = extract_json_from_response(raw_content)
+                if result:
+                    print("Successfully extracted JSON response from URL")
+                    return result
+            except Exception as e:
+                print(f"Error extracting JSON from URL: {str(e)}")
+                return {"error": f"Failed to extract JSON from URL: {str(e)}"}
+                
+            return {"error": "Failed to extract valid JSON from URL response"}
+            
         else:
             print("\nProcessing file analysis...")
             # For files, use the file path directly
             mime_type = get_video_mime_type(path_or_url)
-            # Upload the file using the correct method
-            files = [
-                client.files.upload(file=path_or_url),
-            ]
-            print(f"Uploaded file as: {files[0].uri}")
-            
-            # Format the request using the uploaded file
-            contents = [
-                types.Content(
-                    role="user",
-                    parts=[
-                        types.Part.from_uri(
-                            file_uri=files[0].uri,
-                            mime_type=mime_type,
-                        ),
-                    ],
-                ),
-                types.Content(
-                    role="user",
-                    parts=[
-                        types.Part.from_text(text=_build_analysis_prompt()),
-                    ],
-                ),
-            ]
-
-        # Configure generation exactly as in test.py
-        generate_content_config = types.GenerateContentConfig(
-            response_mime_type="application/json",
-        )
-
-        # Save the raw response to a file
-        timestamp = time.strftime("%Y%m%d_%H%M%S")
-        raw_filename = f"raw_gemini_response_{timestamp}.txt"
-        
-        with open(raw_filename, "w", encoding="utf-8") as f:
-            f.write("=== Raw Gemini Response ===\n\n")
             
             try:
-                # Use the generate_content_stream exactly as in test.py
-                print("Sending request to Gemini...")
-                for chunk in client.models.generate_content_stream(
-                    model=model,
-                    contents=contents,
-                    config=generate_content_config,
-                ):
-                    if chunk.text:
-                        f.write(chunk.text)
-                        print(chunk.text, end="")  # Print to console as well
-                        f.flush()  # Make sure it's written immediately
-            except Exception as e:
-                error_msg = f"\n\nError during generation: {str(e)}"
-                f.write(error_msg)
-                print(error_msg)
-            
-            f.write("\n\n=== End of Response ===")
-        
-        print(f"\nSaved raw response to: {raw_filename}")
-        
-        # Let's also load the file and return its content as the result
-        with open(raw_filename, "r", encoding="utf-8") as f:
-            raw_content = f.read()
-        
-        # Try to extract JSON from the raw content
-        try:
-            result = extract_json_from_response(raw_content)
-            if result:
-                print("Successfully extracted JSON response from raw file")
-                return result
-        except Exception as e:
-            print(f"Error extracting JSON: {str(e)}")
-            return {"error": f"Failed to extract JSON: {str(e)}"}
-            
-        return {"error": "Failed to extract valid JSON from response"}
+                # Upload the file
+                print("Uploading file...")
+                files = [
+                    client.files.upload(file=path_or_url),
+                ]
+                print(f"Uploaded file as: {files[0].uri}")
+                
+                # Wait for the file to become active
+                wait_for_files_active(files)
+                
+                # Format the request using the uploaded file
+                contents = [
+                    types.Content(
+                        role="user",
+                        parts=[
+                            types.Part.from_uri(
+                                file_uri=files[0].uri,
+                                mime_type=mime_type,
+                            ),
+                        ],
+                    ),
+                    types.Content(
+                        role="user",
+                        parts=[
+                            types.Part.from_text(text=_build_analysis_prompt()),
+                        ],
+                    ),
+                ]
+
+                # Configure generation exactly as in test.py
+                generate_content_config = types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                )
+
+                # Save the raw response to a file
+                timestamp = time.strftime("%Y%m%d_%H%M%S")
+                raw_filename = f"raw_gemini_response_{timestamp}.txt"
+                
+                with open(raw_filename, "w", encoding="utf-8") as f:
+                    f.write("=== Raw Gemini Response ===\n\n")
+                    
+                    try:
+                        # Use the generate_content_stream exactly as in test.py
+                        print("Sending request to Gemini...")
+                        for chunk in client.models.generate_content_stream(
+                            model=model,
+                            contents=contents,
+                            config=generate_content_config,
+                        ):
+                            if chunk.text:
+                                f.write(chunk.text)
+                                print(chunk.text, end="")  # Print to console as well
+                                f.flush()  # Make sure it's written immediately
+                    except Exception as e:
+                        error_msg = f"\n\nError during generation: {str(e)}"
+                        f.write(error_msg)
+                        print(error_msg)
+                    
+                    f.write("\n\n=== End of Response ===")
+                
+                print(f"\nSaved raw response to: {raw_filename}")
+                
+                # Let's also load the file and return its content as the result
+                with open(raw_filename, "r", encoding="utf-8") as f:
+                    raw_content = f.read()
+                
+                # Try to extract JSON from the raw content
+                try:
+                    result = extract_json_from_response(raw_content)
+                    if result:
+                        print("Successfully extracted JSON response from raw file")
+                        return result
+                except Exception as e:
+                    print(f"Error extracting JSON: {str(e)}")
+                    return {"error": f"Failed to extract JSON: {str(e)}"}
+                
+                return {"error": "Failed to extract valid JSON from response"}
+                
+            except Exception as upload_error:
+                print(f"\nFile upload/activation failed: {str(upload_error)}")
+                raise
             
     except Exception as e:
         print(f"\nError in analyze_video_with_gemini: {str(e)}")

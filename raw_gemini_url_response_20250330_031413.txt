@@ -1,0 +1,41 @@
+=== Raw Gemini URL Response ===
+
+{
+    "Performance Metrics": {
+        "Attention Score": "95",
+        "Engagement Potential": "95",
+        "Watch Time Retention": "85%",
+        "Key Strengths": [
+            "Features globally recognized football superstars (Messi, Ramos, Neymar)",
+            "Highlights player interactions and impressive skills",
+            "Short, engaging, and highly shareable format"
+        ],
+        "Improvement Suggestions": [
+            "Could add brief context (e.g., team name/session)",
+            "Ensure audio choice matches current trends if aiming for maximum reach"
+        ]
+    },
+    "Detailed Analysis": {
+        "In-depth Video Analysis": {
+            "Hook": "Immediately captures attention by featuring Messi, Ramos, and Neymar together in a training scenario.",
+            "Editing": "Simple, effective editing with text overlays identifying players and tracking the ball's movement.",
+            "Tonality": "Upbeat and engaging, enhanced by background music and the inherent appeal of the players.",
+            "Core Strengths": {
+                "Visuals": "Clear footage featuring highly recognizable athletes.",
+                "Content": "Showcases impressive football skills (keepie-uppies) and player interactions.",
+                "Pacing": "Fast-paced and suitable for short-form video consumption.",
+                "Value": "High entertainment value for football fans worldwide.",
+                "CTA": "Implicit call-to-action for social engagement (likes, shares, comments)."
+            },
+            "Viral Potential": {
+                "Visuals": "Features extremely popular and visually recognizable figures.",
+                "Emotion": "Generates excitement, admiration, and interest in player dynamics.",
+                "Shareability": "Extremely high potential for shares due to star power and skillful content.",
+                "Relatability": "Connects strongly with a massive global audience of football fans.",
+                "Uniqueness": "Offers a glimpse into the casual interactions and skills of elite players."
+            }
+        }
+    }
+}
+
+=== End of URL Response ===
