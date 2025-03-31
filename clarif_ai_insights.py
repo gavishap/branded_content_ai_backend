@@ -2,214 +2,224 @@ import os
 import json
 from typing import List, Dict, Any, Optional
 from dotenv import load_dotenv
+from collections import Counter, defaultdict
 from clarifai_grpc.channel.clarifai_channel import ClarifaiChannel
 from clarifai_grpc.grpc.api import service_pb2, service_pb2_grpc
 from clarifai_grpc.grpc.api import resources_pb2
 from clarifai_grpc.grpc.api.status import status_code_pb2
 import subprocess
-import os
-import base64
+
 # Import S3 utility function
 from s3_utils import upload_to_s3, S3_BUCKET_NAME
+
+# Import Analyzers (We will create these files next)
+from analyzers.concept_analyzer import analyze_concepts
+from analyzers.color_analyzer import analyze_colors
+from analyzers.face_analyzer import analyze_faces # This will handle detection, sentiment, demographics
+from analyzers.object_analyzer import analyze_objects
+from analyzers.celebrity_analyzer import analyze_celebrities
+# Add imports for other analyzers as needed (e.g., moderation)
+
 
 # Load environment variables
 load_dotenv()
 
-# Configure Clarifai
+# --- Configurations ---
 CLARIFAI_PAT = os.getenv("CLARIFAI_PAT")
 if not CLARIFAI_PAT:
     raise ValueError("CLARIFAI_PAT environment variable is not set")
 
-# AWS Configuration is now in s3_utils.py
+# Clarifai User/App Info (for making requests)
+REQUEST_USER_ID = "clarifai" # Usually your own user ID if PAT is yours
+REQUEST_APP_ID = "main"    # Usually your own app ID
 
-USER_ID = "clarifai"
-APP_ID = "main"
+# --- Model IDs & Owners ---
+# Format: (Model_ID, owner_user_id, owner_app_id, [optional_version_id])
+# Using model name as Model ID for standard models, and provided IDs as Version IDs.
+# Verify these in Clarifai portal if issues persist.
+GENERAL_RECOGNITION_MODEL = ("general-recognition", "clarifai", "main", "aaa03c23b3724a16a56b629203edc62c") # Model ID: general-recognition, Version ID: aaa03c...
+# ^^^ Correction based on user info - aaa03c... is the MODEL ID, aa7f35c... is the VERSION ID
+GENERAL_RECOGNITION_MODEL = ("aaa03c23b3724a16a56b629203edc62c", "clarifai", "main", "aa7f35c01e0642fda5cf400f543e7c40") 
+COLOR_RECOGNITION_MODEL = ("color-recognition", "clarifai", "main", "dd9458324b4b45c2be1a7ba84d27cd04")
+FACE_DETECTION_MODEL = ("face-detection", "clarifai", "main", "a403429f2ddf4b499149e2b0ff016180")
+FACE_SENTIMENT_MODEL = ("face-sentiment", "clarifai", "main", "a5d7776f0c064a41b48c3ce039049f65")
+FACE_AGE_MODEL = ("face-age", "clarifai", "main", "fb9f10339ac14e23b8e960e74984401b")
+FACE_GENDER_MODEL = ("face-gender", "clarifai", "main", "ff83d5baac004aafbe6b372ffa6f8227")
+FACE_MULTICULTURALITY_MODEL = ("face-multiculturality", "clarifai", "main", "b2897edbda314615856039fb0c489796")
+GENERAL_DETECTION_MODEL = ("general-detection", "clarifai", "main", "1580bb1932594c93b7e2e04456af7c6f")
+CELEBRITY_DETECTION_MODEL = ("celebrity-detection", "clarifai", "main", "cfbb1ac949e0458984e8160133a7ba19")
 
-MODEL_ID = "d16f390eb32cad478c7ae150069bd2c6"  # This is the general-video-recognition model
+# Add specific MODEL_VERSION_IDs here if needed e.g., GENERAL_RECOGNITION_MODEL = ("aaa...", "clarifai", "main", "VERSION_ID")
 
-MODEL_USER_ID = "clarifai"
-MODEL_APP_ID = "general"
-
-EMOTION_MODEL_ID = "face-emotion-recognition"
-DEMO_MODEL_ID = "demographics"
-TEXT_MODEL_ID = "ocr-scene-text-detection"
-
+# --- gRPC Setup ---
 channel = ClarifaiChannel.get_grpc_channel()
 stub = service_pb2_grpc.V2Stub(channel)
 metadata = (('authorization', 'Key ' + CLARIFAI_PAT),)
+# This represents the user *making* the request
+requestUserDataObject = resources_pb2.UserAppIDSet(user_id=REQUEST_USER_ID, app_id=REQUEST_APP_ID)
 
-userDataObject = resources_pb2.UserAppIDSet(user_id=USER_ID, app_id=APP_ID)
 
-# read_file_bytes is no longer needed here if only used for S3 upload before
-# def read_file_bytes(filepath):
-#     with open(filepath, "rb") as f:
-#         return f.read()
+def _call_clarifai_model(video_url: str, model_details: tuple, sample_ms: int) -> Optional[service_pb2.MultiOutputResponse]:
+    """Helper function to call a specific Clarifai model for video analysis."""
+    model_id, model_user_id, model_app_id = model_details[:3]
+    model_version_id = model_details[3] if len(model_details) > 3 else None # Optional version ID
 
-# upload_to_s3 function is now in s3_utils.py
+    model_owner_user_app_id = resources_pb2.UserAppIDSet(user_id=model_user_id, app_id=model_app_id)
 
-def extract_video_insights(video_url: str, sample_ms: int = 1000, brand_keywords: Optional[List[str]] = None) -> Dict[str, Any]:
-    # Define the specific model owner and app ID - NOT needed directly in request based on docs
-    # model_user_app_id = resources_pb2.UserAppIDSet(user_id=MODEL_USER_ID, app_id=MODEL_APP_ID)
-
-    # NOTE: You might need a specific MODEL_VERSION_ID, the docs use it.
-    # MODEL_VERSION_ID = 'YOUR_MODEL_VERSION_ID_HERE' # e.g., 'aa7f35c01e0642fda5cf400f543e7c40' for general-image-recognition
-
-    request = service_pb2.PostModelOutputsRequest(
-        user_app_id=userDataObject,  # User making the request
-        model_id=MODEL_ID,           # Model ID specified at top level
-        # version_id=MODEL_VERSION_ID, # Optional: Specify version
-        inputs=[
-            resources_pb2.Input(
-                data=resources_pb2.Data(
-                    video=resources_pb2.Video(url=video_url) # Use the S3 URL
+    print(f"Calling Clarifai model: {model_id} (Owner: {model_user_id}/{model_app_id}) for video: {video_url}")
+    try:
+        request = service_pb2.PostModelOutputsRequest(
+            user_app_id=requestUserDataObject, # User API key making the call
+            model_id=model_id,
+            version_id=model_version_id, # Pass version if provided
+            inputs=[
+                resources_pb2.Input(
+                    data=resources_pb2.Data(
+                        video=resources_pb2.Video(url=video_url)
+                    )
+                )
+            ],
+            # The model field here specifies output config AND the owner of the model being called
+            # This seems redundant if model_id is top-level, but let's try matching docs closely
+            # UPDATE: Based on error messages, model_id at top level is correct.
+            # The nested model object is ONLY for output_info.
+            model=resources_pb2.Model(
+                # id=model_id, # DO NOT include id here if model_id is top-level
+                # user_app_id=model_owner_user_app_id, # DO NOT include owner here if model_id is top-level
+                output_info=resources_pb2.OutputInfo(
+                    output_config=resources_pb2.OutputConfig(
+                        sample_ms=sample_ms
+                    )
                 )
             )
-        ],
-        # Nested model field containing output configuration
-        model=resources_pb2.Model(
-            output_info=resources_pb2.OutputInfo(
-                output_config=resources_pb2.OutputConfig(sample_ms=sample_ms)
-            )
-            # Removed id and user_app_id from here as model_id is top-level
         )
-        # Removed incorrect top-level output_config
-    )
+        response = stub.PostModelOutputs(request, metadata=metadata)
+        if response.status.code != status_code_pb2.SUCCESS:
+            print(f"Clarifai API call failed for model {model_id}: {response.status.description}")
+            return None
+        print(f"Successfully received response from model: {model_id}")
+        return response
+    except Exception as e:
+        print(f"Exception calling Clarifai model {model_id}: {e}")
+        return None
 
-    response = stub.PostModelOutputs(request, metadata=metadata)
-    if response.status.code != status_code_pb2.SUCCESS:
-        raise Exception("Clarifai API call failed: " + response.status.description)
 
+def analyze_video_multi_model(video_url: str, sample_ms: int = 1000, brand_keywords: Optional[List[str]] = None) -> Dict[str, Any]:
+    """Analyzes video using multiple Clarifai models and aggregates results."""
 
-    frame_data = response.outputs[0].data.frames
+    all_insights = {}
+    model_responses = {}
 
-    insights = {
-        "frames_analyzed": len(frame_data),
-        "concept_frequency": {},
-        "face_counts": [],
-        "emotion_distribution": {},
-        "dominant_colors": [],
-        "brightness_levels": [],
-        "demographics": [],
-        "brand_appearance_timestamps": [],
-        "cut_count": 0,
-        "avg_time_per_cut_sec": 0.0
+    # Dictionary mapping descriptive name to model details tuple
+    models_to_call = {
+        "general_recognition": GENERAL_RECOGNITION_MODEL,
+        "color": COLOR_RECOGNITION_MODEL,
+        "face_detection": FACE_DETECTION_MODEL,
+        "face_sentiment": FACE_SENTIMENT_MODEL,
+        "face_age": FACE_AGE_MODEL,
+        "face_gender": FACE_GENDER_MODEL,
+        "face_multiculturality": FACE_MULTICULTURALITY_MODEL,
+        "general_detection": GENERAL_DETECTION_MODEL,
+        "celebrity_detection": CELEBRITY_DETECTION_MODEL,
     }
 
-    previous_concepts = set()
-    last_timestamp = 0
-    cut_timestamps = []
+    for name, model_details_tuple in models_to_call.items():
+        response = _call_clarifai_model(video_url, model_details_tuple, sample_ms)
+        if response:
+            model_responses[name] = response
 
-    for frame in frame_data:
-        timestamp = frame.frame_info.time  # in milliseconds
-        concept_names = []
-        face_count = 0
-        emotions = []
-        demographics = []
-        dominant_color = "unknown"
-        brightness_score = 0.0
+    # --- Analyze Responses ---
+    # Pass raw responses to specific analyzers
 
-        for concept in frame.data.concepts:
-            name = concept.name.lower()
-            concept_names.append(name)
-            insights["concept_frequency"][name] = insights["concept_frequency"].get(name, 0) + 1
+    if "general_recognition" in model_responses:
+        all_insights["concepts"] = analyze_concepts(model_responses["general_recognition"], brand_keywords)
 
-            # Estimate brightness by checking for "bright", "light", "dark", etc.
-            if name in ["bright", "light"]:
-                brightness_score += concept.value
-            elif name in ["dark"]:
-                brightness_score -= concept.value
+    if "color" in model_responses:
+        all_insights["colors"] = analyze_colors(model_responses["color"])
 
-            # Detect dominant color-like concepts
-            if name in ["red", "blue", "green", "yellow", "orange", "purple", "pink", "white", "black"]:
-                dominant_color = name
+    # Face analysis requires results from multiple models potentially
+    face_related_responses = {k: v for k, v in model_responses.items() if k.startswith("face_")}
+    if face_related_responses:
+         all_insights["faces"] = analyze_faces(face_related_responses) # Pass dict of relevant responses
 
-        # Detect visual cuts: new set of concepts = possible cut
-        if previous_concepts and set(concept_names) != previous_concepts:
-            cut_timestamps.append(timestamp)
-        previous_concepts = set(concept_names)
+    if "general_detection" in model_responses:
+        all_insights["objects"] = analyze_objects(model_responses["general_detection"])
 
-        # Brand detection
-        if brand_keywords:
-            if any(brand.lower() in concept_names for brand in brand_keywords):
-                insights["brand_appearance_timestamps"].append(timestamp)
+    if "celebrity_detection" in model_responses:
+        all_insights["celebrities"] = analyze_celebrities(model_responses["celebrity_detection"])
 
-        # Placeholder for face and emotion detection count
-        if hasattr(frame.data, 'regions'):
-            face_count = len(frame.data.regions)
-            for region in frame.data.regions:
-                if region.data.face and region.data.face.emotions:
-                    for emotion in region.data.face.emotions:
-                        label = emotion.concept.name
-                        insights["emotion_distribution"][label] = insights["emotion_distribution"].get(label, 0) + 1
+    # --- TODO: Add Analysis for Moderation, Text (OCR), etc. ---
 
-                if region.data.face.demographics:
-                    for attr in region.data.face.demographics:
-                        if attr.concept.name in ["young adult", "teen", "adult", "senior"]:
-                            demographics.append(attr.concept.name)
+    # --- Calculate Overall Video Stats (Example) ---
+    total_frames_analyzed = 0
+    if model_responses:
+        # Get frame count from the first successful response (assuming consistent frame count)
+        first_successful_response = next(iter(model_responses.values()))
+        if first_successful_response and first_successful_response.outputs:
+             total_frames_analyzed = len(first_successful_response.outputs[0].data.frames)
 
-        insights["face_counts"].append((timestamp, face_count))
-        insights["dominant_colors"].append((timestamp, dominant_color))
-        insights["brightness_levels"].append((timestamp, round(brightness_score, 2)))
-        for demo in demographics:
-            insights["demographics"].append(demo)
-        last_timestamp = timestamp
+    all_insights["video_summary"] = {
+        "total_frames_analyzed_approx": total_frames_analyzed,
+        "requested_sample_ms": sample_ms,
+        "analysis_models_attempted": list(models_to_call.keys()),
+        "analysis_models_succeeded": list(model_responses.keys())
+    }
 
-    # Calculate cut statistics
-    insights["cut_count"] = len(cut_timestamps)
-    if len(cut_timestamps) > 1:
-        total_duration_sec = last_timestamp / 1000
-        insights["avg_time_per_cut_sec"] = round(total_duration_sec / len(cut_timestamps), 2)
 
-    return insights
+    return all_insights
 
 def download_video_with_ytdlp(url: str, output_path: str = "temp_video.mp4") -> str:
     try:
         print(f"Downloading video from: {url}")
-        # yt-dlp will auto-pick best format and save as output_path
-        command = [
-            "yt-dlp",
-            "-f", "mp4",
-            "-o", output_path,
-            url
-        ]
-        subprocess.run(command, check=True)
+        command = ["yt-dlp", "-f", "mp4", "-o", output_path, url]
+        subprocess.run(command, check=True, capture_output=True, text=True) # Added capture_output
         if os.path.exists(output_path):
             print(f"Downloaded to: {output_path}")
             return output_path
         else:
-            raise Exception("Download failed: file not found.")
+            # Check stderr if file not found
+            result = subprocess.run(command, check=False, capture_output=True, text=True)
+            print(f"yt-dlp stderr: {result.stderr}")
+            raise Exception("Download failed: file not found post-execution.")
+    except subprocess.CalledProcessError as e:
+         print(f"yt-dlp Error Output: {e.stderr}")
+         raise Exception(f"Video download failed (yt-dlp error): {e}")
     except Exception as e:
         raise Exception(f"Video download failed: {str(e)}")
 
-# Test run
+
+# --- Main Execution ---
 if __name__ == "__main__":
     video_url_source = "https://www.youtube.com/shorts/U1MigIJXJx8"
-    local_filename = "temp_video.mp4"
-    # Use the S3 bucket name imported from s3_utils
-    s3_object_key = "videos/" + os.path.basename(local_filename) # Optional: organize in S3
-    local_path = None # Initialize local_path
+    # video_url_source = "https://samples.clarifai.com/beer.mp4" # Alt test video
+    local_filename = "temp_video_" + os.path.basename(video_url_source).split('?')[0] + ".mp4" # More unique name
+    s3_object_key = "videos/" + local_filename
+    local_path = None
+    result = {}
+
     try:
-        # 1. Download the video
+        # 1. Download
         local_path = download_video_with_ytdlp(video_url_source, output_path=local_filename)
 
-        # 2. Upload to S3 using the imported function
+        # 2. Upload to S3
         s3_video_url = upload_to_s3(local_path, S3_BUCKET_NAME, s3_object_name=s3_object_key)
 
-        # 3. Extract Insights using S3 URL
-        brand_keywords = ["tesla"] # Example keywords
-        result = extract_video_insights(s3_video_url, sample_ms=1000, brand_keywords=brand_keywords)
-        print("--- Video Insights ---")
+        # 3. Analyze using S3 URL
+        print("--- Starting Multi-Model Analysis ---")
+        result = analyze_video_multi_model(s3_video_url, sample_ms=1000) # Analyze at 1 FPS
+        print("--- Combined Analysis Results ---")
         print(json.dumps(result, indent=2))
 
     except Exception as e:
-        print(f"An error occurred: {e}")
+        print("--- An error occurred during the process ---")
+        print(f"{e}")
 
     finally:
-        # 4. Clean up the local file
+        # 4. Clean up local file
         if local_path and os.path.exists(local_path):
             try:
                 os.remove(local_path)
-                print(f"Cleaned up local file: {local_path}")
+                print("Cleaned up local file: {local_path}")
             except OSError as e:
                 print(f"Error deleting file {local_path}: {e}")
 
