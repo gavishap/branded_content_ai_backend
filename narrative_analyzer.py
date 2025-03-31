@@ -114,7 +114,7 @@ def clean_json_response(text):
 def _build_analysis_prompt():
     """Builds the analysis prompt template."""
     return """Analyze this video and provide a structured performance prediction. Format your response as a single JSON object with this structure:
-
+(there are just example scores, i need u to give ur own)
 {
     "Performance Metrics": {
         "Attention Score": "85",
@@ -127,7 +127,8 @@ def _build_analysis_prompt():
         ],
         "Improvement Suggestions": [
             "Add subtitles or captions",
-            "Incorporate more dynamic transitions"
+            "Incorporate more dynamic transitions",
+            "Optimize thumbnail with clear value proposition"
         ]
     },
     "Detailed Analysis": {
@@ -143,17 +144,41 @@ def _build_analysis_prompt():
                 "CTA": "Clear call-to-action that encourages viewer response"
             },
             "Viral Potential": {
-                "Visuals": "Visually appealing and attention-grabbing content",
-                "Emotion": "Creates emotional connection through storytelling",
-                "Shareability": "Content is highly shareable across platforms",
-                "Relatability": "Connects well with target demographic",
-                "Uniqueness": "Offers unique perspective or approach"
+                "Overall": "This video has moderate viral potential, with strengths in visual quality but could improve in emotional impact.",
+                "Scores": {
+                    "Visuals": 82,
+                    "Emotional_Impact": 65,
+                    "Shareability": 78,
+                    "Relatability": 70,
+                    "Uniqueness": 68
+                },
+                "Reasoning": {
+                    "Visuals": "Professional quality visuals with good lighting and composition score well, but lack the highly distinctive style seen in most viral content.",
+                    "Emotional_Impact": "Limited emotional storytelling reduces the likelihood of deep audience connection needed for virality.",
+                    "Shareability": "Content has clear value that viewers would want to share with specific interested parties.",
+                    "Relatability": "The content speaks to common experiences but doesn't create the strong 'that's so me' moment that drives viral sharing.",
+                    "Uniqueness": "While professionally executed, the approach follows familiar patterns seen in similar content."
+                }
+            },
+            "Platform Recommendations": {
+                "Instagram": "Optimize for mobile viewing with clear visuals",
+                "TikTok": "Focus on trending sounds and quick hooks in first 3 seconds",
+                "YouTube Shorts": "Include clear branding and calls to action"
             }
         }
     }
 }
 
-IMPORTANT: Return ONLY the JSON object, no additional text or markdown formatting."""
+For the Viral Potential section, carefully evaluate each component on a scale of 0-100 based on established research:
+- Visuals: Assess visual quality, composition, color psychology, and whether it stands out in a social feed
+- Emotional_Impact: Evaluate how strongly it triggers emotions like joy, surprise, inspiration or outrage
+- Shareability: Analyze why viewers would want to share this (social currency, practical value, etc.)
+- Relatability: Measure how well it connects with audience experiences or aspirations
+- Uniqueness: Assess how differentiated it is from similar content in the same category
+
+Your detailed reasoning should be based on analysis of viral video trends and research but won't be shown to users.
+
+IMPORTANT: Return ONLY the JSON object, no additional text or markdown formatting. Ensure all fields have detailed, specific descriptions rather than generic statements."""
 
 def extract_json_from_response(response_text):
     """Extracts and validates JSON from the response text."""
@@ -165,15 +190,20 @@ def extract_json_from_response(response_text):
             json_str = json_blocks[0]
         else:
             # Fallback to finding JSON object in plain text
-            json_match = re.search(r'\{[\s\S]*?\}', response_text)
+            # Look for the full JSON pattern with both open and close braces
+            pattern = r'\{[\s\S]*\}'
+            json_match = re.search(pattern, response_text)
             if not json_match:
                 raise ValueError("No JSON found in response")
             json_str = json_match.group()
         
+        # Clean the JSON string before parsing
+        json_str = clean_json_response(json_str)
+        
         # Parse the JSON with more lenient settings
         data = json.loads(json_str, strict=False)
         
-        # Validate required fields
+        # Validate required fields with more flexible approach
         required_fields = [
             "Performance Metrics.Attention Score",
             "Performance Metrics.Engagement Potential", 
@@ -182,17 +212,17 @@ def extract_json_from_response(response_text):
             "Performance Metrics.Improvement Suggestions",
             "Detailed Analysis.In-depth Video Analysis.Hook",
             "Detailed Analysis.In-depth Video Analysis.Editing",
-            "Detailed Analysis.In-depth Video Analysis.Tonality",
-            "Detailed Analysis.In-depth Video Analysis.Core Strengths",
-            "Detailed Analysis.In-depth Video Analysis.Viral Potential"
+            "Detailed Analysis.In-depth Video Analysis.Tonality"
         ]
         
+        # Only check the fields that are essential
         for field in required_fields:
             parts = field.split('.')
             current = data
             for part in parts:
                 if part not in current:
-                    raise ValueError(f"Missing required field: {field}")
+                    print(f"Warning: Missing field: {field}")
+                    break
                 current = current[part]
                 
         # Get the detailed text by removing the JSON block and any markdown formatting
@@ -411,20 +441,28 @@ def extract_structured_data(text):
             "In-depth Video Analysis": {
                 "Hook": extract_value(text, r"Hook\"?\s*:\s*\"([^\"]+)"),
                 "Editing": extract_value(text, r"Editing\"?\s*:\s*\"([^\"]+)"),
-                "Tonality of Voice": extract_value(text, r"Tonality of Voice\"?\s*:\s*\"([^\"]+)"),
-                "Core Strengths on Social Media": {
-                    "Visually Appealing": extract_value(text, r"Visually Appealing\"?\s*:\s*\"([^\"]+)"),
-                    "Relatable Content": extract_value(text, r"Relatable Content\"?\s*:\s*\"([^\"]+)"),
-                    "Length and Pacing": extract_value(text, r"Length and Pacing\"?\s*:\s*\"([^\"]+)"),
-                    "Value Proposition": extract_value(text, r"Value Proposition\"?\s*:\s*\"([^\"]+)"),
-                    "Call to Action": extract_value(text, r"Call to Action\"?\s*:\s*\"([^\"]+)")
+                "Tonality": extract_value(text, r"Tonality\"?\s*:\s*\"([^\"]+)"),
+                "Core Strengths": {
+                    "Visuals": extract_value(text, r"Visuals\"?\s*:\s*\"([^\"]+)"),
+                    "Content": extract_value(text, r"Content\"?\s*:\s*\"([^\"]+)"),
+                    "Pacing": extract_value(text, r"Pacing\"?\s*:\s*\"([^\"]+)"),
+                    "Value": extract_value(text, r"Value\"?\s*:\s*\"([^\"]+)"),
+                    "CTA": extract_value(text, r"CTA\"?\s*:\s*\"([^\"]+)")
                 },
-                "Viral Video Criteria": {
-                    "Intriguing Visuals": extract_value(text, r"Intriguing Visuals\"?\s*:\s*\"([^\"]+)"),
-                    "Emotional Connection": extract_value(text, r"Emotional Connection\"?\s*:\s*\"([^\"]+)"),
-                    "Shareability": extract_value(text, r"Shareability\"?\s*:\s*\"([^\"]+)"),
-                    "Relatability": extract_value(text, r"Relatability\"?\s*:\s*\"([^\"]+)"),
-                    "Uniqueness": extract_value(text, r"Uniqueness\"?\s*:\s*\"([^\"]+)")
+                "Viral Potential": {
+                    "Overall": extract_value(text, r"Overall\"?\s*:\s*\"([^\"]+)"),
+                    "Scores": {
+                        "Visuals": extract_value(text, r"Visuals\"?\s*:\s*(\d+)"),
+                        "Emotional_Impact": extract_value(text, r"Emotional_Impact\"?\s*:\s*(\d+)"),
+                        "Shareability": extract_value(text, r"Shareability\"?\s*:\s*(\d+)"),
+                        "Relatability": extract_value(text, r"Relatability\"?\s*:\s*(\d+)"),
+                        "Uniqueness": extract_value(text, r"Uniqueness\"?\s*:\s*(\d+)")
+                    }
+                },
+                "Platform Recommendations": {
+                    "Instagram": extract_value(text, r"Instagram\"?\s*:\s*\"([^\"]+)"),
+                    "TikTok": extract_value(text, r"TikTok\"?\s*:\s*\"([^\"]+)"),
+                    "YouTube Shorts": extract_value(text, r"YouTube Shorts\"?\s*:\s*\"([^\"]+)")
                 }
             }
         }
@@ -446,7 +484,7 @@ def extract_list(text, pattern):
     items = match.group(1).split(',')
     return [item.strip().strip('"') for item in items if item.strip()]
 
-# Update the test_analysis function to be synchronous
+# Test function for development
 def test_analysis():
     try:
         # Test with Tesla video file
@@ -464,50 +502,7 @@ def test_analysis():
             print("Warning: Returning raw response due to parsing error")
             print(analysis["raw_response"])
         else:
-            # Print Performance Metrics
-            print("\n=== Performance Metrics ===")
-            metrics = analysis["Performance Metrics"]
-            if isinstance(metrics, dict) and "Note" not in metrics:
-                print(f"Attention Score: {metrics.get('Attention Score', 'N/A')}")
-                print(f"Engagement Potential: {metrics.get('Engagement Potential', 'N/A')}")
-                print(f"Watch Time Retention: {metrics.get('Watch Time Retention', 'N/A')}")
-                
-                if "Key Strengths" in metrics:
-                    print("\nKey Strengths:")
-                    for strength in metrics["Key Strengths"]:
-                        print(f"- {strength}")
-                
-                if "Improvement Suggestions" in metrics:
-                    print("\nImprovement Suggestions:")
-                    for suggestion in metrics["Improvement Suggestions"]:
-                        print(f"- {suggestion}")
-            else:
-                print(metrics.get("Note", "No metrics available"))
-            
-            # Print Detailed Analysis
-            print("\n=== Detailed Analysis ===")
-            detailed = analysis["Detailed Analysis"]
-            if "In-depth Video Analysis" in detailed:
-                analysis_data = detailed["In-depth Video Analysis"]
-                if isinstance(analysis_data, dict) and "Note" not in analysis_data:
-                    if "Hook" in analysis_data:
-                        print(f"\nHook: {analysis_data['Hook']}")
-                    if "Editing" in analysis_data:
-                        print(f"\nEditing: {analysis_data['Editing']}")
-                    if "Tonality of Voice" in analysis_data:
-                        print(f"\nTonality of Voice: {analysis_data['Tonality of Voice']}")
-                    
-                    if "Viral Video Criteria" in analysis_data:
-                        print("\nViral Video Criteria:")
-                        for key, value in analysis_data["Viral Video Criteria"].items():
-                            print(f"\n{key}: {value}")
-                    
-                    if "Overall Assessment" in analysis_data:
-                        print(f"\nOverall Assessment: {analysis_data['Overall Assessment']}")
-                else:
-                    print(analysis_data.get("Note", "No detailed analysis available"))
-            else:
-                print("No detailed analysis available")
+            print(json.dumps(analysis, indent=2))
         
     except Exception as e:
         print(f"Analysis Error: {str(e)}")
@@ -516,4 +511,4 @@ def test_analysis():
         traceback.print_exc()
 
 if __name__ == "__main__":
-    test_analysis()  # Remove asyncio.run since we're now synchronous 
+    test_analysis() 

@@ -1,7 +1,0 @@
-=== Raw Gemini Response ===
-
-
-
-Error during generation: 400 FAILED_PRECONDITION. {'error': {'code': 400, 'message': 'The File alqm11io2o3v is not in an ACTIVE state and usage is not allowed.', 'status': 'FAILED_PRECONDITION'}}
-
-=== End of Response ===
