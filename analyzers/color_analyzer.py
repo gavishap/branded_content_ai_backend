@@ -1,41 +1,55 @@
-from collections import Counter
+from collections import Counter, defaultdict
 from typing import Dict, Any
 from clarifai_grpc.grpc.api import service_pb2
 
 def analyze_colors(response: service_pb2.MultiOutputResponse) -> Dict[str, Any]:
-    """Analyzes color recognition results for dominant colors."""
+    """Analyzes color recognition results to provide aggregated insights."""
     if not response or not response.outputs:
         return {"error": "No response data"}
 
-    dominant_color_counts = Counter()
     total_frames = len(response.outputs[0].data.frames)
-    # Clarifai color model often returns hex codes AND w3c names. We'll prefer names.
-
+    confidence_threshold = 0.3  # Lowered from 0.7 to catch more colors
+    
+    # Track in which frames each color appears
+    hex_colors = defaultdict(set)
+    w3c_colors = defaultdict(set)
+    
     for frame in response.outputs[0].data.frames:
-        # Find the concept with the highest value (dominant color for the frame)
-        dominant_frame_color = None
-        max_value = 0
+        timestamp = frame.frame_info.time
+        
+        # Access color concepts from the frame data
         for concept in frame.data.concepts:
-            if concept.value > max_value:
-                max_value = concept.value
-                # Prefer the W3C name if available
-                dominant_frame_color = concept.name
+            if concept.value >= confidence_threshold:
+                name = concept.name.lower()
+                # Check if it's a hex color (starts with #)
+                if name.startswith('#'):
+                    hex_colors[name].add(timestamp)
+                else:
+                    w3c_colors[name].add(timestamp)
 
-        if dominant_frame_color:
-            dominant_color_counts[dominant_frame_color] += 1
-
-    # Calculate frequency distribution
-    dominant_color_frequency = {
-        name: round((count / total_frames) * 100, 2)
-        for name, count in dominant_color_counts.items()
+    # Calculate distribution percentages
+    hex_distribution = {
+        name: round((len(frames) / total_frames) * 100, 2)
+        for name, frames in hex_colors.items()
     }
 
-    # Get top N dominant colors overall
-    top_n = 5
-    top_dominant_colors = dominant_color_counts.most_common(top_n)
+    w3c_distribution = {
+        name: round((len(frames) / total_frames) * 100, 2)
+        for name, frames in w3c_colors.items()
+    }
+
+    # Sort by percentage for clearer output
+    sorted_hex = dict(sorted(hex_distribution.items(), key=lambda x: x[1], reverse=True))
+    sorted_w3c = dict(sorted(w3c_distribution.items(), key=lambda x: x[1], reverse=True))
 
     return {
         "total_frames_analyzed": total_frames,
-        "top_dominant_colors_overall": dict(top_dominant_colors), # Top N colors and frame counts
-        "dominant_color_frequency_percent": dominant_color_frequency # Percentage of frames each color was dominant
+        "unique_colors_detected": {
+            "hex": len(hex_colors),
+            "w3c": len(w3c_colors)
+        },
+        "color_distribution_percent": {
+            "hex": sorted_hex,
+            "w3c": sorted_w3c
+        }
     } 

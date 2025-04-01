@@ -1,4 +1,4 @@
-from collections import Counter
+from collections import Counter, defaultdict
 from typing import Dict, Any
 from clarifai_grpc.grpc.api import service_pb2
 
@@ -7,29 +7,35 @@ def analyze_celebrities(response: service_pb2.MultiOutputResponse) -> Dict[str, 
     if not response or not response.outputs:
         return {"error": "No response data"}
 
-    celebrity_counts = Counter()
     total_frames = len(response.outputs[0].data.frames)
-    confidence_threshold = 0.8 # Confidence for detected celebrities
-
+    confidence_threshold = 0.7
+    
+    # Track in which frames each celebrity appears
+    celebrity_frames = defaultdict(set)
+    
     for frame in response.outputs[0].data.frames:
-        # Celebrities are usually in regions
+        timestamp = frame.frame_info.time
         for region in frame.data.regions:
-            # Celebrity model might have concepts within regions
             for concept in region.data.concepts:
-                 if concept.value >= confidence_threshold:
-                    celebrity_counts[concept.name] += 1 # Keep original case for names
-                    # Note: Counts each detection instance.
+                if concept.value >= confidence_threshold:
+                    name = concept.name  # Keep original case for celebrity names
+                    celebrity_frames[name].add(timestamp)
 
-    # Calculate frequency - TODO
+    # Calculate distribution percentages
+    celebrity_distribution = {
+        name: round((len(frames) / total_frames) * 100, 2)
+        for name, frames in celebrity_frames.items()
+    }
 
-    # Get top N detected celebrities
-    top_n = 5
-    top_celebrities = celebrity_counts.most_common(top_n)
+    # Sort by percentage for clearer output
+    sorted_distribution = dict(sorted(
+        celebrity_distribution.items(),
+        key=lambda x: x[1],
+        reverse=True
+    ))
 
     return {
         "total_frames_analyzed": total_frames,
-        "confidence_threshold": confidence_threshold,
-        "top_detected_celebrities_by_count": dict(top_celebrities),
-        "all_detected_celebrities_counts": dict(celebrity_counts)
-        # TODO: Calculate frequency (% of frames celeb appeared in)
+        "unique_celebrities_detected": len(celebrity_frames),
+        "celebrity_distribution_percent": sorted_distribution
     } 

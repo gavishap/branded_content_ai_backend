@@ -41,13 +41,13 @@ GENERAL_RECOGNITION_MODEL = ("general-recognition", "clarifai", "main", "aaa03c2
 # ^^^ Correction based on user info - aaa03c... is the MODEL ID, aa7f35c... is the VERSION ID
 GENERAL_RECOGNITION_MODEL = ("aaa03c23b3724a16a56b629203edc62c", "clarifai", "main", "aa7f35c01e0642fda5cf400f543e7c40") 
 COLOR_RECOGNITION_MODEL = ("color-recognition", "clarifai", "main", "dd9458324b4b45c2be1a7ba84d27cd04")
-FACE_DETECTION_MODEL = ("face-detection", "clarifai", "main", "a403429f2ddf4b499149e2b0ff016180")
-FACE_SENTIMENT_MODEL = ("face-sentiment", "clarifai", "main", "a5d7776f0c064a41b48c3ce039049f65")
-FACE_AGE_MODEL = ("face-age", "clarifai", "main", "fb9f10339ac14e23b8e960e74984401b")
-FACE_GENDER_MODEL = ("face-gender", "clarifai", "main", "ff83d5baac004aafbe6b372ffa6f8227")
-FACE_MULTICULTURALITY_MODEL = ("face-multiculturality", "clarifai", "main", "b2897edbda314615856039fb0c489796")
-GENERAL_DETECTION_MODEL = ("general-detection", "clarifai", "main", "1580bb1932594c93b7e2e04456af7c6f")
-CELEBRITY_DETECTION_MODEL = ("celebrity-detection", "clarifai", "main", "cfbb1ac949e0458984e8160133a7ba19")
+FACE_DETECTION_MODEL = ("face-detection", "clarifai", "main", "6dc7e46bc9124c5c8824be4822abe105")
+FACE_SENTIMENT_MODEL = ("face-sentiment-recognition", "clarifai", "main", "a5d7776f0c064a41b48c3ce039049f65")
+FACE_AGE_MODEL = ("age-demographics-recognition", "clarifai", "main", "fb9f10339ac14e23b8e960e74984401b")
+FACE_GENDER_MODEL = ("gender-demographics-recognition", "clarifai", "main", "ff83d5baac004aafbe6b372ffa6f8227")
+FACE_MULTICULTURALITY_MODEL = ("ethnicity-demographics-recognition", "clarifai", "main", "b2897edbda314615856039fb0c489796")
+GENERAL_DETECTION_MODEL = ("general-image-detection", "clarifai", "main", "1580bb1932594c93b7e2e04456af7c6f")
+CELEBRITY_DETECTION_MODEL = ("celebrity-face-detection", "clarifai", "main", "2ba4d0b0e53043f38dbbed49e03917b6")
 
 # Add specific MODEL_VERSION_IDs here if needed e.g., GENERAL_RECOGNITION_MODEL = ("aaa...", "clarifai", "main", "VERSION_ID")
 
@@ -190,12 +190,15 @@ def download_video_with_ytdlp(url: str, output_path: str = "temp_video.mp4") -> 
 
 # --- Main Execution ---
 if __name__ == "__main__":
-    video_url_source = "https://www.youtube.com/shorts/U1MigIJXJx8"
+    video_url_source = "https://www.youtube.com/shorts/DEBPsPXFww0"
     # video_url_source = "https://samples.clarifai.com/beer.mp4" # Alt test video
     local_filename = "temp_video_" + os.path.basename(video_url_source).split('?')[0] + ".mp4" # More unique name
     s3_object_key = "videos/" + local_filename
     local_path = None
     result = {}
+
+    # Brand keywords to look for
+    brand_keywords = ["cerave", "cetaphil"]
 
     try:
         # 1. Download
@@ -206,7 +209,7 @@ if __name__ == "__main__":
 
         # 3. Analyze using S3 URL
         print("--- Starting Multi-Model Analysis ---")
-        result = analyze_video_multi_model(s3_video_url, sample_ms=1000) # Analyze at 1 FPS
+        result = analyze_video_multi_model(s3_video_url, sample_ms=125, brand_keywords=brand_keywords)  # Analyze at 8 FPS (1000ms/8 = 125ms)
         print("--- Combined Analysis Results ---")
         print(json.dumps(result, indent=2))
 
