@@ -12,14 +12,11 @@ import subprocess
 # Import S3 utility function
 from s3_utils import upload_to_s3, S3_BUCKET_NAME
 
-# Import Analyzers (We will create these files next)
+# Import Analyzers
 from analyzers.concept_analyzer import analyze_concepts
-from analyzers.color_analyzer import analyze_colors
-from analyzers.face_analyzer import analyze_faces # This will handle detection, sentiment, demographics
+from analyzers.face_analyzer import analyze_faces
 from analyzers.object_analyzer import analyze_objects
 from analyzers.celebrity_analyzer import analyze_celebrities
-# Add imports for other analyzers as needed (e.g., moderation)
-
 
 # Load environment variables
 load_dotenv()
@@ -30,17 +27,12 @@ if not CLARIFAI_PAT:
     raise ValueError("CLARIFAI_PAT environment variable is not set")
 
 # Clarifai User/App Info (for making requests)
-REQUEST_USER_ID = "clarifai" # Usually your own user ID if PAT is yours
-REQUEST_APP_ID = "main"    # Usually your own app ID
+REQUEST_USER_ID = "clarifai"
+REQUEST_APP_ID = "main"
 
 # --- Model IDs & Owners ---
-# Format: (Model_ID, owner_user_id, owner_app_id, [optional_version_id])
-# Using model name as Model ID for standard models, and provided IDs as Version IDs.
-# Verify these in Clarifai portal if issues persist.
-GENERAL_RECOGNITION_MODEL = ("general-recognition", "clarifai", "main", "aaa03c23b3724a16a56b629203edc62c") # Model ID: general-recognition, Version ID: aaa03c...
-# ^^^ Correction based on user info - aaa03c... is the MODEL ID, aa7f35c... is the VERSION ID
+# Format: (model_id, owner_user_id, owner_app_id, [optional_version_id])
 GENERAL_RECOGNITION_MODEL = ("aaa03c23b3724a16a56b629203edc62c", "clarifai", "main", "aa7f35c01e0642fda5cf400f543e7c40") 
-COLOR_RECOGNITION_MODEL = ("color-recognition", "clarifai", "main", "dd9458324b4b45c2be1a7ba84d27cd04")
 FACE_DETECTION_MODEL = ("face-detection", "clarifai", "main", "6dc7e46bc9124c5c8824be4822abe105")
 FACE_SENTIMENT_MODEL = ("face-sentiment-recognition", "clarifai", "main", "a5d7776f0c064a41b48c3ce039049f65")
 FACE_AGE_MODEL = ("age-demographics-recognition", "clarifai", "main", "fb9f10339ac14e23b8e960e74984401b")
@@ -49,29 +41,23 @@ FACE_MULTICULTURALITY_MODEL = ("ethnicity-demographics-recognition", "clarifai",
 GENERAL_DETECTION_MODEL = ("general-image-detection", "clarifai", "main", "1580bb1932594c93b7e2e04456af7c6f")
 CELEBRITY_DETECTION_MODEL = ("celebrity-face-detection", "clarifai", "main", "2ba4d0b0e53043f38dbbed49e03917b6")
 
-# Add specific MODEL_VERSION_IDs here if needed e.g., GENERAL_RECOGNITION_MODEL = ("aaa...", "clarifai", "main", "VERSION_ID")
-
 # --- gRPC Setup ---
 channel = ClarifaiChannel.get_grpc_channel()
 stub = service_pb2_grpc.V2Stub(channel)
 metadata = (('authorization', 'Key ' + CLARIFAI_PAT),)
-# This represents the user *making* the request
 requestUserDataObject = resources_pb2.UserAppIDSet(user_id=REQUEST_USER_ID, app_id=REQUEST_APP_ID)
-
 
 def _call_clarifai_model(video_url: str, model_details: tuple, sample_ms: int) -> Optional[service_pb2.MultiOutputResponse]:
     """Helper function to call a specific Clarifai model for video analysis."""
     model_id, model_user_id, model_app_id = model_details[:3]
-    model_version_id = model_details[3] if len(model_details) > 3 else None # Optional version ID
-
-    model_owner_user_app_id = resources_pb2.UserAppIDSet(user_id=model_user_id, app_id=model_app_id)
+    model_version_id = model_details[3] if len(model_details) > 3 else None
 
     print(f"Calling Clarifai model: {model_id} (Owner: {model_user_id}/{model_app_id}) for video: {video_url}")
     try:
         request = service_pb2.PostModelOutputsRequest(
-            user_app_id=requestUserDataObject, # User API key making the call
+            user_app_id=requestUserDataObject,
             model_id=model_id,
-            version_id=model_version_id, # Pass version if provided
+            version_id=model_version_id,
             inputs=[
                 resources_pb2.Input(
                     data=resources_pb2.Data(
@@ -79,13 +65,7 @@ def _call_clarifai_model(video_url: str, model_details: tuple, sample_ms: int) -
                     )
                 )
             ],
-            # The model field here specifies output config AND the owner of the model being called
-            # This seems redundant if model_id is top-level, but let's try matching docs closely
-            # UPDATE: Based on error messages, model_id at top level is correct.
-            # The nested model object is ONLY for output_info.
             model=resources_pb2.Model(
-                # id=model_id, # DO NOT include id here if model_id is top-level
-                # user_app_id=model_owner_user_app_id, # DO NOT include owner here if model_id is top-level
                 output_info=resources_pb2.OutputInfo(
                     output_config=resources_pb2.OutputConfig(
                         sample_ms=sample_ms
@@ -103,17 +83,14 @@ def _call_clarifai_model(video_url: str, model_details: tuple, sample_ms: int) -
         print(f"Exception calling Clarifai model {model_id}: {e}")
         return None
 
-
-def analyze_video_multi_model(video_url: str, sample_ms: int = 1000, brand_keywords: Optional[List[str]] = None) -> Dict[str, Any]:
+def analyze_video_multi_model(video_url: str, sample_ms: int = 1000) -> Dict[str, Any]:
     """Analyzes video using multiple Clarifai models and aggregates results."""
-
     all_insights = {}
     model_responses = {}
 
     # Dictionary mapping descriptive name to model details tuple
     models_to_call = {
         "general_recognition": GENERAL_RECOGNITION_MODEL,
-        "color": COLOR_RECOGNITION_MODEL,
         "face_detection": FACE_DETECTION_MODEL,
         "face_sentiment": FACE_SENTIMENT_MODEL,
         "face_age": FACE_AGE_MODEL,
@@ -129,18 +106,13 @@ def analyze_video_multi_model(video_url: str, sample_ms: int = 1000, brand_keywo
             model_responses[name] = response
 
     # --- Analyze Responses ---
-    # Pass raw responses to specific analyzers
-
     if "general_recognition" in model_responses:
-        all_insights["concepts"] = analyze_concepts(model_responses["general_recognition"], brand_keywords)
-
-    if "color" in model_responses:
-        all_insights["colors"] = analyze_colors(model_responses["color"])
+        all_insights["concepts"] = analyze_concepts(model_responses["general_recognition"])
 
     # Face analysis requires results from multiple models potentially
     face_related_responses = {k: v for k, v in model_responses.items() if k.startswith("face_")}
     if face_related_responses:
-         all_insights["faces"] = analyze_faces(face_related_responses) # Pass dict of relevant responses
+         all_insights["faces"] = analyze_faces(face_related_responses)
 
     if "general_detection" in model_responses:
         all_insights["objects"] = analyze_objects(model_responses["general_detection"])
@@ -148,12 +120,9 @@ def analyze_video_multi_model(video_url: str, sample_ms: int = 1000, brand_keywo
     if "celebrity_detection" in model_responses:
         all_insights["celebrities"] = analyze_celebrities(model_responses["celebrity_detection"])
 
-    # --- TODO: Add Analysis for Moderation, Text (OCR), etc. ---
-
-    # --- Calculate Overall Video Stats (Example) ---
+    # --- Calculate Overall Video Stats ---
     total_frames_analyzed = 0
     if model_responses:
-        # Get frame count from the first successful response (assuming consistent frame count)
         first_successful_response = next(iter(model_responses.values()))
         if first_successful_response and first_successful_response.outputs:
              total_frames_analyzed = len(first_successful_response.outputs[0].data.frames)
@@ -165,19 +134,17 @@ def analyze_video_multi_model(video_url: str, sample_ms: int = 1000, brand_keywo
         "analysis_models_succeeded": list(model_responses.keys())
     }
 
-
     return all_insights
 
 def download_video_with_ytdlp(url: str, output_path: str = "temp_video.mp4") -> str:
     try:
         print(f"Downloading video from: {url}")
         command = ["yt-dlp", "-f", "mp4", "-o", output_path, url]
-        subprocess.run(command, check=True, capture_output=True, text=True) # Added capture_output
+        subprocess.run(command, check=True, capture_output=True, text=True)
         if os.path.exists(output_path):
             print(f"Downloaded to: {output_path}")
             return output_path
         else:
-            # Check stderr if file not found
             result = subprocess.run(command, check=False, capture_output=True, text=True)
             print(f"yt-dlp stderr: {result.stderr}")
             raise Exception("Download failed: file not found post-execution.")
@@ -186,7 +153,6 @@ def download_video_with_ytdlp(url: str, output_path: str = "temp_video.mp4") -> 
          raise Exception(f"Video download failed (yt-dlp error): {e}")
     except Exception as e:
         raise Exception(f"Video download failed: {str(e)}")
-
 
 # --- Main Execution ---
 if __name__ == "__main__":
@@ -197,9 +163,6 @@ if __name__ == "__main__":
     local_path = None
     result = {}
 
-    # Brand keywords to look for
-    brand_keywords = ["cerave", "cetaphil"]
-
     try:
         # 1. Download
         local_path = download_video_with_ytdlp(video_url_source, output_path=local_filename)
@@ -209,7 +172,7 @@ if __name__ == "__main__":
 
         # 3. Analyze using S3 URL
         print("--- Starting Multi-Model Analysis ---")
-        result = analyze_video_multi_model(s3_video_url, sample_ms=125, brand_keywords=brand_keywords)  # Analyze at 8 FPS (1000ms/8 = 125ms)
+        result = analyze_video_multi_model(s3_video_url, sample_ms=125)  # Analyze at 8 FPS (1000ms/8 = 125ms)
         print("--- Combined Analysis Results ---")
         print(json.dumps(result, indent=2))
 
