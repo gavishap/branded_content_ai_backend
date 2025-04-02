@@ -1,0 +1,45 @@
+# Temporary files
+temp_video.mp4
+temp_video_*.mp4
+
+# Analysis results & raw responses
+raw_gemini_response_*.txt
+raw_gemini_url_response_*.txt
+raw_response_*.txt
+analysis_results/*.json
+structured_analysis/*.json
+unified_analyses/*.json
+debug/*.txt
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Environment variables
+.env
+
+# Virtual Environment
+.venv/
+env/
+venv/
+ENV/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# S3 Temporary Files
+s3_temp/
+
+# Logs
+*.log
+
+# OS specific
+.DS_Store
+Thumbs.db 
