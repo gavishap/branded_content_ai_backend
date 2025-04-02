@@ -8,6 +8,8 @@ from clarifai_grpc.grpc.api import service_pb2, service_pb2_grpc
 from clarifai_grpc.grpc.api import resources_pb2
 from clarifai_grpc.grpc.api.status import status_code_pb2
 import subprocess
+import concurrent.futures
+from functools import partial
 
 # Import S3 utility function
 from s3_utils import upload_to_s3, S3_BUCKET_NAME
@@ -17,6 +19,10 @@ from analyzers.concept_analyzer import analyze_concepts
 from analyzers.face_analyzer import analyze_faces
 from analyzers.object_analyzer import analyze_objects
 from analyzers.celebrity_analyzer import analyze_celebrities
+
+# Import Analysis Layers
+from inference_layer import analyze_video_output
+from structured_analysis import process_analysis
 
 # Load environment variables
 load_dotenv()
@@ -60,18 +66,18 @@ def _call_clarifai_model(video_url: str, model_details: tuple, sample_ms: int) -
             version_id=model_version_id,
             inputs=[
                 resources_pb2.Input(
-                    data=resources_pb2.Data(
-                        video=resources_pb2.Video(url=video_url)
-                    )
+                        data=resources_pb2.Data(
+                            video=resources_pb2.Video(url=video_url)
+                        )
                 )
             ],
             model=resources_pb2.Model(
                 output_info=resources_pb2.OutputInfo(
-                    output_config=resources_pb2.OutputConfig(
-                        sample_ms=sample_ms
+                        output_config=resources_pb2.OutputConfig(
+                            sample_ms=sample_ms
+                        )
                     )
                 )
-            )
         )
         response = stub.PostModelOutputs(request, metadata=metadata)
         if response.status.code != status_code_pb2.SUCCESS:
@@ -84,7 +90,7 @@ def _call_clarifai_model(video_url: str, model_details: tuple, sample_ms: int) -
         return None
 
 def analyze_video_multi_model(video_url: str, sample_ms: int = 1000) -> Dict[str, Any]:
-    """Analyzes video using multiple Clarifai models and aggregates results."""
+    """Analyzes video using multiple Clarifai models in parallel and aggregates results."""
     all_insights = {}
     model_responses = {}
 
@@ -100,10 +106,34 @@ def analyze_video_multi_model(video_url: str, sample_ms: int = 1000) -> Dict[str
         "celebrity_detection": CELEBRITY_DETECTION_MODEL,
     }
 
-    for name, model_details_tuple in models_to_call.items():
-        response = _call_clarifai_model(video_url, model_details_tuple, sample_ms)
-        if response:
-            model_responses[name] = response
+    # Create a function that will process a single model with the video URL and sample_ms already set
+    def process_single_model(model_name, model_details):
+        response = _call_clarifai_model(video_url, model_details, sample_ms)
+        return (model_name, response)
+
+    # Use ThreadPoolExecutor to run API calls in parallel
+    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
+        # Create a list of futures
+        futures = []
+        for name, model_details_tuple in models_to_call.items():
+            # Submit each model processing task to the executor
+            future = executor.submit(process_single_model, name, model_details_tuple)
+            futures.append(future)
+        
+        # Collect results as they complete
+        print("Waiting for model responses in parallel...")
+        for future in concurrent.futures.as_completed(futures):
+            try:
+                name, response = future.result()
+                if response:
+                    print(f"✓ Received response from model: {name}")
+                    model_responses[name] = response
+                else:
+                    print(f"✗ No response from model: {name}")
+            except Exception as e:
+                print(f"Error processing model: {e}")
+
+    print(f"Completed parallel processing. Received {len(model_responses)} valid responses out of {len(models_to_call)} models.")
 
     # --- Analyze Responses ---
     if "general_recognition" in model_responses:
@@ -157,8 +187,7 @@ def download_video_with_ytdlp(url: str, output_path: str = "temp_video.mp4") -> 
 # --- Main Execution ---
 if __name__ == "__main__":
     video_url_source = "https://www.youtube.com/shorts/DEBPsPXFww0"
-    # video_url_source = "https://samples.clarifai.com/beer.mp4" # Alt test video
-    local_filename = "temp_video_" + os.path.basename(video_url_source).split('?')[0] + ".mp4" # More unique name
+    local_filename = "temp_video_" + os.path.basename(video_url_source).split('?')[0] + ".mp4"
     s3_object_key = "videos/" + local_filename
     local_path = None
     result = {}
@@ -172,16 +201,28 @@ if __name__ == "__main__":
 
         # 3. Analyze using S3 URL
         print("--- Starting Multi-Model Analysis ---")
-        result = analyze_video_multi_model(s3_video_url, sample_ms=125)  # Analyze at 8 FPS (1000ms/8 = 125ms)
+        clarifai_result = analyze_video_multi_model(s3_video_url, sample_ms=125)  # Analyze at 8 FPS (1000ms/8 = 125ms)
         print("--- Combined Analysis Results ---")
-        print(json.dumps(result, indent=2))
+        print(json.dumps(clarifai_result, indent=2))
+
+        # 4. Generate initial analysis using Gemini
+        print("\n--- Generating Initial Analysis ---")
+        initial_analysis = analyze_video_output(clarifai_result)
+        print("--- Initial Analysis Complete ---")
+        print(f"Initial analysis saved to: analysis_results/analysis_{initial_analysis['timestamp']}.json")
+
+        # 5. Generate structured analysis
+        print("\n--- Generating Structured Analysis ---")
+        structured_result = process_analysis(initial_analysis)
+        print("--- Structured Analysis Complete ---")
+        print("Structured analysis has been saved and is ready for frontend use")
 
     except Exception as e:
         print("--- An error occurred during the process ---")
         print(f"{e}")
 
     finally:
-        # 4. Clean up local file
+        # 6. Clean up local file
         if local_path and os.path.exists(local_path):
             try:
                 os.remove(local_path)

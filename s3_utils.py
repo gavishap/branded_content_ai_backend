@@ -2,11 +2,22 @@ import os
 import boto3
 from botocore.exceptions import NoCredentialsError
 from typing import Optional
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 # AWS Configuration
 S3_BUCKET_NAME = "brandedcontentai"
 S3_REGION = "eu-north-1"  # Explicitly set your bucket's region
-s3_client = boto3.client('s3', region_name=S3_REGION)
+
+# Initialize S3 client with credentials from environment variables
+s3_client = boto3.client(
+    's3',
+    region_name=S3_REGION,
+    aws_access_key_id=os.getenv('AWS_ACCESS_KEY_ID'),
+    aws_secret_access_key=os.getenv('AWS_SECRET_ACCESS_KEY')
+)
 
 def upload_to_s3(local_file_path: str, bucket: str, s3_object_name: Optional[str] = None) -> str:
     """Uploads a file to an S3 bucket and returns the public URL."""
