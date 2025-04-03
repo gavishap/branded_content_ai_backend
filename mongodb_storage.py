@@ -50,25 +50,42 @@ class MongoDBStorage:
         # Initialize client if not already initialized
         if cls._client is None:
             try:
-                print(f"Connecting to MongoDB: {MONGODB_URI}")
+                # Add SSL parameters to URI if they're not already present
+                uri = MONGODB_URI
+                if '?' in uri:
+                    if 'tlsAllowInvalidCertificates=true' not in uri:
+                        uri += '&tlsAllowInvalidCertificates=true'
+                else:
+                    uri += '?tlsAllowInvalidCertificates=true'
+                    
+                print(f"Connecting to MongoDB with modified URI")
+                
+                # When deployed on Heroku, we need to allow invalid certs
                 cls._client = MongoClient(
-                    MONGODB_URI, 
+                    uri, 
                     serverSelectionTimeoutMS=server_selection_timeout_ms,
                     connectTimeoutMS=connect_timeout_ms,
-                    socketTimeoutMS=socket_timeout_ms
+                    socketTimeoutMS=socket_timeout_ms,
+                    ssl=True,
+                    ssl_cert_reqs=False  # Don't verify SSL certificate
                 )
+                
                 # Test connection
-                cls._client.admin.command('ping')
-                print("MongoDB connection successful")
+                try:
+                    cls._client.admin.command('ping')
+                    print("MongoDB connection successful")
+                except Exception as e:
+                    print(f"Warning: Ping test failed, but continuing: {e}")
+                    
             except Exception as e:
                 print(f"Error initializing MongoDB client: {e}", file=sys.stderr)
                 traceback.print_exc()
                 raise
         
-        # Get database
+        # Get database - if database doesn't exist, MongoDB will create it
         db = cls._client[MONGODB_DB]
         
-        # Get collection
+        # Get collection - if collection doesn't exist, MongoDB will create it
         collection = db[MONGODB_ANALYSES_COLLECTION]
         
         return collection

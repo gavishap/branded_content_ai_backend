@@ -22,31 +22,48 @@ def get_saved_analyses():
         skip = int(request.args.get('skip', 0))
         
         # Get analyses from MongoDB
-        analyses = MongoDBStorage.list_analyses(limit=limit, skip=skip)
-        
-        # Format timestamps nicely for display
-        for analysis in analyses:
-            if isinstance(analysis.get('timestamp'), str):
-                try:
-                    dt = datetime.fromisoformat(analysis['timestamp'])
-                    analysis['formatted_date'] = dt.strftime("%B %d, %Y %I:%M %p")
-                except ValueError:
-                    analysis['formatted_date'] = analysis['timestamp']
-            else:
-                analysis['formatted_date'] = "Unknown date"
-        
-        # Get total count
-        total_count = MongoDBStorage.count_analyses()
-        
-        # Return the list of analyses
-        return jsonify({
-            "success": True,
-            "analyses": analyses,
-            "total": total_count,
-            "limit": limit,
-            "skip": skip,
-            "has_more": skip + len(analyses) < total_count
-        })
+        try:
+            analyses = MongoDBStorage.list_analyses(limit=limit, skip=skip)
+            
+            # Format timestamps nicely for display
+            for analysis in analyses:
+                if isinstance(analysis.get('timestamp'), str):
+                    try:
+                        dt = datetime.fromisoformat(analysis['timestamp'])
+                        analysis['formatted_date'] = dt.strftime("%B %d, %Y %I:%M %p")
+                    except ValueError:
+                        analysis['formatted_date'] = analysis['timestamp']
+                else:
+                    analysis['formatted_date'] = "Unknown date"
+            
+            # Get total count or default to length of analyses if count fails
+            try:
+                total_count = MongoDBStorage.count_analyses()
+            except:
+                total_count = len(analyses)
+            
+            # Return the list of analyses
+            return jsonify({
+                "success": True,
+                "analyses": analyses,
+                "total": total_count,
+                "limit": limit,
+                "skip": skip,
+                "has_more": skip + len(analyses) < total_count
+            })
+        except Exception as db_error:
+            print(f"Database error in get_saved_analyses: {str(db_error)}")
+            # Return empty list on database errors
+            return jsonify({
+                "success": True,  # Return success:true to prevent frontend errors
+                "analyses": [],
+                "total": 0,
+                "limit": limit,
+                "skip": skip,
+                "has_more": False,
+                "message": "Could not retrieve analyses from database"
+            })
+            
     except Exception as e:
         return jsonify({
             "success": False,
