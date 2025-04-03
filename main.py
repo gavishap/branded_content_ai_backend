@@ -19,6 +19,8 @@ from unified_analysis import analyze_video as analyze_video_unified
 from mongodb_storage import MongoDBStorage
 from api_routes import analysis_bp
 import traceback
+import atexit
+import pymongo
 
 app = Flask(__name__)
 CORS(app)
@@ -26,6 +28,15 @@ processor = DashboardProcessor()
 
 # Register the analysis blueprint
 app.register_blueprint(analysis_bp)
+
+# Initialize MongoDB connection at application startup
+print("Initializing MongoDB connection...")
+try:
+    mongodb_collection = MongoDBStorage.get_collection()
+    print(f"MongoDB initialized successfully")
+except Exception as e:
+    print(f"Warning: Could not initialize MongoDB connection: {e}")
+    traceback.print_exc()
 
 # In-memory storage for analyses and tracking analysis progress
 analyses = []
@@ -523,6 +534,103 @@ def process_unified_analysis_file(analysis_id, file_path, filename, update_progr
         if os.path.exists(file_path):
             os.remove(file_path)
 
+@app.route('/api/saved-analyses', methods=['GET'])
+def get_saved_analyses():
+    """Get saved analyses from MongoDB storage"""
+    try:
+        limit = int(request.args.get('limit', 20))
+        skip = int(request.args.get('skip', 0))
+        
+        # Get analyses from MongoDB with a quick timeout
+        try:
+            # Return empty immediately if collection is empty
+            total_count = 0
+            stored_analyses = []
+            
+            # Use a quick timeout for MongoDB operations - this will either
+            # connect quickly or fail quickly, preventing the frontend from waiting
+            client = pymongo.MongoClient(
+                os.getenv("MONGODB_URI"),
+                serverSelectionTimeoutMS=1000,  # 1 second timeout
+                connectTimeoutMS=1000,
+                socketTimeoutMS=1000
+            )
+            
+            print("Connecting to MongoDB...")
+            
+            # Check if the database exists first
+            db_names = client.list_database_names()
+            db_name = os.getenv("MONGODB_DB", "branded_content_ai")
+            
+            if db_name not in db_names:
+                print(f"Database '{db_name}' does not exist. Returning empty list.")
+                return jsonify({"analyses": [], "total": 0})
+                
+            # Database exists, access it
+            db = client[db_name]
+            
+            # Check if the collection exists
+            coll_name = os.getenv("MONGODB_ANALYSES_COLLECTION", "analyses")
+            if coll_name not in db.list_collection_names():
+                print(f"Collection '{coll_name}' does not exist. Returning empty list.")
+                return jsonify({"analyses": [], "total": 0})
+                
+            # Collection exists, access it
+            coll = db[coll_name]
+            
+            # Try a quick operation to test connection and count documents
+            total_count = coll.count_documents({})
+            print(f"Total analyses in collection: {total_count}")
+            
+            # If we have documents, fetch them with pagination
+            if total_count > 0:
+                cursor = coll.find({}).sort("timestamp", -1).skip(skip).limit(limit)
+                for doc in cursor:
+                    if "_id" in doc:
+                        doc["_id"] = str(doc["_id"])
+                    stored_analyses.append(doc)
+            
+            client.close()
+            
+        except Exception as e:
+            print(f"Error accessing MongoDB: {e}")
+            traceback.print_exc()
+            # Don't wait - just return empty list immediately
+            return jsonify({"analyses": [], "total": 0})
+        
+        # Format analyses
+        formatted_analyses = []
+        for analysis in stored_analyses:
+            try:
+                analysis_id = analysis.get("id")
+                if not analysis_id:
+                    continue
+                    
+                # Extract video URL from metadata or fall back to content_name
+                video_url = None
+                if analysis.get("analysis_data", {}).get("metadata", {}).get("video_url"):
+                    video_url = analysis["analysis_data"]["metadata"]["video_url"]
+                elif analysis.get("content_name"):
+                    video_url = analysis.get("content_name")
+
+                formatted_analyses.append({
+                    "id": analysis_id,
+                    "video_url": video_url,
+                    "analyzed_date": analysis.get("formatted_date", analysis.get("timestamp")),
+                    "thumbnail": analysis.get("thumbnail"),
+                    "content_name": analysis.get("content_name", "Unknown"),
+                    "analysis_data": analysis.get("analysis_data", {})
+                })
+            except Exception as inner_e:
+                print(f"Error processing analysis: {inner_e}")
+                continue
+        
+        return jsonify({"analyses": formatted_analyses, "total": total_count})
+    except Exception as e:
+        print(f"Error in get_saved_analyses: {e}")
+        traceback.print_exc()
+        return jsonify({"analyses": [], "total": 0})
+
 # Add a compatibility route that maps to our new saved-analyses API
 @app.route('/api/analyses', methods=['GET'])
 def get_analyses_compat():
@@ -531,39 +639,79 @@ def get_analyses_compat():
         limit = int(request.args.get('limit', 20))
         skip = int(request.args.get('skip', 0))
         
-        # Get analyses from MongoDB
-        stored_analyses = MongoDBStorage.list_analyses(limit=limit, skip=skip)
+        # Get analyses from MongoDB with a quick timeout
+        try:
+            # Return empty immediately if collection is empty
+            stored_analyses = []
+            
+            # Use a quick timeout for MongoDB operations
+            client = pymongo.MongoClient(
+                os.getenv("MONGODB_URI"),
+                serverSelectionTimeoutMS=2000,  # 2 second timeout
+                connectTimeoutMS=2000,
+                socketTimeoutMS=2000
+            )
+            db = client[os.getenv("MONGODB_DB", "branded_content_ai")]
+            coll = db[os.getenv("MONGODB_ANALYSES_COLLECTION", "analyses")]
+            
+            # Try to fetch documents with pagination
+            cursor = coll.find({}).sort("timestamp", -1).skip(skip).limit(limit)
+            for doc in cursor:
+                if "_id" in doc:
+                    doc["_id"] = str(doc["_id"])
+                stored_analyses.append(doc)
+            
+            client.close()
+            
+        except Exception as e:
+            print(f"Error accessing MongoDB: {e}")
+            # Don't wait - just return empty list immediately
+            return jsonify({"analyses": []})
         
         # Format to match the expected format from the old API
         formatted_analyses = []
         for analysis in stored_analyses:
-            analysis_data = MongoDBStorage.get_analysis(analysis.get("id"))
-            if analysis_data:
+            try:
+                analysis_id = analysis.get("id")
+                if not analysis_id:
+                    continue
+                    
                 # Extract video URL from metadata or fall back to content_name
                 video_url = None
-                if analysis_data.get("analysis_data", {}).get("metadata", {}).get("video_url"):
-                    video_url = analysis_data["analysis_data"]["metadata"]["video_url"]
+                if analysis.get("analysis_data", {}).get("metadata", {}).get("video_url"):
+                    video_url = analysis["analysis_data"]["metadata"]["video_url"]
                 elif analysis.get("content_name"):
                     video_url = analysis.get("content_name")
 
                 formatted_analyses.append({
                     "metadata": {
-                        "id": analysis.get("id"),
+                        "id": analysis_id,
                         "video_url": video_url,
                         "analyzed_date": analysis.get("formatted_date", analysis.get("timestamp"))
                     },
-                    "analysis_data": analysis_data.get("analysis_data", {})
+                    "analysis_data": analysis.get("analysis_data", {})
                 })
+            except Exception as inner_e:
+                print(f"Error processing analysis {analysis.get('id')}: {inner_e}")
+                continue
         
         return jsonify({"analyses": formatted_analyses})
     except Exception as e:
         print(f"Error in get_analyses_compat: {e}")
+        traceback.print_exc()
         return jsonify({"analyses": []})
 
 # Close MongoDB connection when the app is terminated
-@app.teardown_appcontext
-def shutdown_session(exception=None):
+def shutdown_mongodb():
+    print("Application shutting down, closing MongoDB connection...")
     MongoDBStorage.close_connection()
 
+# Register the shutdown function to run at exit
+atexit.register(shutdown_mongodb)
+
 if __name__ == '__main__':
-    app.run(debug=True, port=5000) 
+    # For local development, use:
+    # app.run(debug=True, port=5000)
+    
+    # For production deployment, use:
+    app.run(host='0.0.0.0', port=5000, debug=False) 

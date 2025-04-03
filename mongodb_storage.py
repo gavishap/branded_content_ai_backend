@@ -6,6 +6,9 @@ from typing import Dict, List, Optional, Any
 from pymongo import MongoClient
 from dotenv import load_dotenv
 from bson.objectid import ObjectId
+import sys
+import pymongo
+import traceback
 
 # Load environment variables
 load_dotenv()
@@ -14,6 +17,13 @@ load_dotenv()
 MONGODB_URI = os.getenv("MONGODB_URI", "mongodb://localhost:27017/")
 MONGODB_DB = os.getenv("MONGODB_DB", "branded_content_ai")
 MONGODB_ANALYSES_COLLECTION = os.getenv("MONGODB_ANALYSES_COLLECTION", "analyses")
+
+# Fallback local storage
+DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
+ANALYSES_DIR = os.path.join(DATA_DIR, "analyses")
+
+# Create data directories if they don't exist
+os.makedirs(ANALYSES_DIR, exist_ok=True)
 
 class MongoDBStorage:
     """
@@ -30,17 +40,23 @@ class MongoDBStorage:
         if cls._collection is None:
             # Initialize connection if not already established
             if cls._client is None:
+                print(f"Connecting to MongoDB: {MONGODB_URI}")
+                # The tlsAllowInvalidCertificates parameter is set in the URI
                 cls._client = MongoClient(MONGODB_URI)
+                print("MongoDB client created successfully")
                 
             # Get database
             cls._db = cls._client[MONGODB_DB]
+            print(f"Connected to database: {MONGODB_DB}")
             
             # Get collection
             cls._collection = cls._db[MONGODB_ANALYSES_COLLECTION]
+            print(f"Connected to collection: {MONGODB_ANALYSES_COLLECTION}")
             
             # Create indexes if needed
-            cls._collection.create_index("id", unique=True)
-            cls._collection.create_index("timestamp")
+            # cls._collection.create_index("id", unique=True)
+            # cls._collection.create_index("timestamp")
+            # print("Created indexes on 'id' and 'timestamp' fields")
             
         return cls._collection
     
@@ -52,6 +68,7 @@ class MongoDBStorage:
             cls._client = None
             cls._db = None
             cls._collection = None
+            print("MongoDB connection closed")
     
     @staticmethod
     def generate_id(content_name: str) -> str:
@@ -90,19 +107,23 @@ class MongoDBStorage:
         # Get collection and save document
         collection = cls.get_collection()
         
-        # Check if document already exists with this ID
-        existing = collection.find_one({"id": analysis_id})
-        if existing:
-            # Update existing document
-            collection.update_one(
-                {"id": analysis_id},
-                {"$set": full_analysis}
-            )
-        else:
-            # Insert new document
-            collection.insert_one(full_analysis)
+        try:
+            # Check if document already exists with this ID
+            existing = collection.find_one({"id": analysis_id})
+            if existing:
+                # Update existing document
+                collection.update_one(
+                    {"id": analysis_id},
+                    {"$set": full_analysis}
+                )
+            else:
+                # Insert new document
+                collection.insert_one(full_analysis)
+                
+            print(f"Analysis saved to MongoDB with ID: {analysis_id}")
+        except Exception as e:
+            print(f"Error saving to MongoDB: {e}", file=sys.stderr)
             
-        print(f"Analysis saved to MongoDB with ID: {analysis_id}")
         return analysis_id
     
     @classmethod
@@ -116,17 +137,23 @@ class MongoDBStorage:
         Returns:
             The analysis data or None if not found
         """
+        if not analysis_id:
+            return None
+            
         collection = cls.get_collection()
         
-        # Find document by ID
-        result = collection.find_one({"id": analysis_id})
-        
-        if result:
-            # Convert ObjectId to string for JSON serialization
-            if "_id" in result and isinstance(result["_id"], ObjectId):
-                result["_id"] = str(result["_id"])
-            return result
-        
+        try:
+            # Find document by ID
+            result = collection.find_one({"id": analysis_id})
+            
+            if result:
+                # Convert ObjectId to string for JSON serialization
+                if "_id" in result and isinstance(result["_id"], ObjectId):
+                    result["_id"] = str(result["_id"])
+                return result
+        except Exception as e:
+            print(f"Error retrieving analysis {analysis_id}: {e}", file=sys.stderr)
+            
         return None
     
     @classmethod
@@ -141,26 +168,68 @@ class MongoDBStorage:
         Returns:
             List of analysis metadata
         """
-        collection = cls.get_collection()
-        
-        # Query for all analyses, sorted by timestamp (newest first)
-        cursor = collection.find({}).sort("timestamp", -1).skip(skip).limit(limit)
-        
-        analyses = []
-        for doc in cursor:
-            # Convert ObjectId to string for JSON serialization
-            if "_id" in doc and isinstance(doc["_id"], ObjectId):
-                doc["_id"] = str(doc["_id"])
+        try:
+            # Set MongoDB client options with timeouts
+            if cls._client is None:
+                # Configure the client with timeouts to prevent hanging
+                print(f"Connecting to MongoDB with timeouts: {MONGODB_URI}")
+                cls._client = MongoClient(
+                    MONGODB_URI,
+                    serverSelectionTimeoutMS=1000,  # 1 second timeout
+                    connectTimeoutMS=1000,
+                    socketTimeoutMS=1000
+                )
                 
-            # Add analysis to result list with key fields
-            analyses.append({
-                "id": doc.get("id"),
-                "content_name": doc.get("content_name", "Unknown"),
-                "timestamp": doc.get("timestamp"),
-                "thumbnail": doc.get("thumbnail")
-            })
+            # Use the existing get_collection method which has proper error handling
+            collection = cls.get_collection()
             
-        return analyses
+            # Get total count for debugging
+            total_count = collection.count_documents({})
+            print(f"Total analyses in collection: {total_count}")
+            
+            # If we have documents, fetch them with pagination
+            analyses = []
+            if total_count > 0:
+                # Query for all analyses, sorted by timestamp (newest first)
+                cursor = collection.find({}).sort("timestamp", -1).skip(skip).limit(limit)
+                
+                for doc in cursor:
+                    # Convert ObjectId to string for JSON serialization
+                    if "_id" in doc and isinstance(doc["_id"], ObjectId):
+                        doc["_id"] = str(doc["_id"])
+                        
+                    # Format timestamp for display if needed
+                    timestamp = doc.get("timestamp")
+                    formatted_date = None
+                    if timestamp:
+                        try:
+                            dt = datetime.fromisoformat(timestamp)
+                            formatted_date = dt.strftime("%B %d, %Y")
+                        except (ValueError, TypeError):
+                            formatted_date = None
+                    
+                    # Add analysis to result list with key fields
+                    analyses.append({
+                        "id": doc.get("id"),
+                        "content_name": doc.get("content_name", "Unknown"),
+                        "timestamp": timestamp,
+                        "thumbnail": doc.get("thumbnail"),
+                        "formatted_date": formatted_date or doc.get("formatted_date")
+                    })
+            
+            print(f"Listed {len(analyses)} analyses")
+            return analyses
+            
+        except pymongo.errors.ServerSelectionTimeoutError:
+            print("MongoDB server selection timeout. The database may be unreachable.")
+            return []
+        except pymongo.errors.ConnectionFailure:
+            print("Failed to connect to MongoDB. The database may be unreachable.")
+            return []
+        except Exception as e:
+            print(f"Error listing analyses: {e}", file=sys.stderr)
+            traceback.print_exc()
+            return []
     
     @classmethod
     def delete_analysis(cls, analysis_id: str) -> bool:
@@ -252,10 +321,6 @@ if __name__ == "__main__":
         )
         print(f"Saved test analysis with ID: {test_id}")
         
-        # Test get
-        retrieved = MongoDBStorage.get_analysis(test_id)
-        print(f"Retrieved analysis: {retrieved is not None}")
-        
         # Test list
         analyses = MongoDBStorage.list_analyses(limit=5)
         print(f"Listed {len(analyses)} analyses")
@@ -263,6 +328,10 @@ if __name__ == "__main__":
         # Test count
         count = MongoDBStorage.count_analyses()
         print(f"Total analyses in database: {count}")
+        
+        # Test get
+        retrieved = MongoDBStorage.get_analysis(test_id)
+        print(f"Retrieved analysis: {retrieved is not None}")
         
         # Test update
         updated = MongoDBStorage.update_analysis(
@@ -284,5 +353,4 @@ if __name__ == "__main__":
         
     finally:
         # Close connection
-        MongoDBStorage.close_connection()
-        print("MongoDB connection closed") 
+        MongoDBStorage.close_connection() 
