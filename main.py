@@ -444,18 +444,8 @@ def process_unified_analysis_file(analysis_id, file_path, filename, update_progr
         file_size = os.path.getsize(file_path)
         print(f"File size: {file_size} bytes")
         
-        # First, upload the file to a temporary S3 location to get a URL
-        update_progress_callback("uploading_to_s3", 10)
-        s3_object_key = f"videos/{os.path.basename(file_path)}"
-        try:
-            s3_video_url = upload_to_s3(file_path, S3_BUCKET_NAME, s3_object_name=s3_object_key)
-            print(f"Successfully uploaded to S3: {s3_video_url}")
-        except Exception as e:
-            print(f"Error uploading to S3: {e}")
-            traceback.print_exc()
-            raise
-        
-        # Use the unified analysis function that runs Gemini and ClarifAI in parallel
+        # Use the unified analysis function with the local file path directly
+        # This allows Gemini to use direct file upload instead of URL-based analysis
         update_progress_callback("preparing", 15)
         print(f"Starting unified analysis for video file: {filename}")
         
@@ -464,8 +454,25 @@ def process_unified_analysis_file(analysis_id, file_path, filename, update_progr
             update_progress_callback(stage, progress_pct)
             print(f"Analysis progress: {stage} - {progress_pct}%")
         
-        # Run the unified analysis with progress callback
-        unified_result = analyze_video_unified(s3_video_url, progress_callback)
+        # Run the unified analysis with progress callback using the local file path
+        # S3 upload will happen inside the analysis pipeline only for ClarifAI
+        unified_result = analyze_video_unified(file_path, progress_callback)
+        
+        # Get S3 URL from the result if available, or upload to S3 if needed
+        s3_video_url = None
+        if "metadata" in unified_result and "s3_video_url" in unified_result["metadata"]:
+            s3_video_url = unified_result["metadata"]["s3_video_url"]
+        else:
+            # Upload to S3 for storage if not already done in the analysis
+            update_progress_callback("uploading_to_s3", 85)
+            s3_object_key = f"videos/{os.path.basename(file_path)}"
+            try:
+                s3_video_url = upload_to_s3(file_path, S3_BUCKET_NAME, s3_object_name=s3_object_key)
+                print(f"Successfully uploaded to S3: {s3_video_url}")
+            except Exception as e:
+                print(f"Error uploading to S3 for storage: {e}")
+                # Continue even if S3 upload fails
+                s3_video_url = f"file://{filename}"
         
         # Update progress
         update_progress_callback("finalizing", 90)

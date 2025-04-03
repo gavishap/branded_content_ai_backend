@@ -114,6 +114,11 @@ def run_analyses_in_parallel(video_url_or_path: str, progress_callback=None) -> 
             # 5. Generate structured analysis
             structured_result = process_analysis(initial_analysis)
             
+            # Store S3 URL in the metadata
+            if "metadata" not in structured_result:
+                structured_result["metadata"] = {}
+            structured_result["metadata"]["s3_video_url"] = s3_video_url
+            
             # 6. Clean up local file if we downloaded it
             if is_url and local_path and os.path.exists(local_path):
                 os.remove(local_path)
