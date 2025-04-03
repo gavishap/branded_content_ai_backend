@@ -16,10 +16,15 @@ from clarif_ai_insights import (
 from inference_layer import analyze_video_output
 from structured_analysis import process_analysis
 from unified_analysis import analyze_video as analyze_video_unified
+from mongodb_storage import MongoDBStorage
+from api_routes import analysis_bp
 
 app = Flask(__name__)
 CORS(app)
 processor = DashboardProcessor()
+
+# Register the analysis blueprint
+app.register_blueprint(analysis_bp)
 
 # In-memory storage for analyses and tracking analysis progress
 analyses = []
@@ -381,6 +386,10 @@ def process_unified_analysis_url(analysis_id, video_url, update_progress_callbac
             **unified_result
         }
         
+        # Save the analysis to MongoDB
+        content_name = video_url.split('/')[-1] if '/' in video_url else video_url
+        MongoDBStorage.save_analysis(result_with_metadata, content_name, analysis_id)
+        
         # Add to analyses list
         analyses.append({
             "metadata": {
@@ -435,6 +444,7 @@ def process_unified_analysis_file(analysis_id, file_path, filename, update_progr
         result_with_metadata = {
             "metadata": {
                 "id": analysis_id,
+                "video_url": s3_video_url,
                 "filename": filename,
                 "analyzed_date": datetime.now().strftime("%B %d, %Y %H:%M"),
                 "analysis_sources": ["Gemini", "ClarifAI"],
@@ -443,10 +453,14 @@ def process_unified_analysis_file(analysis_id, file_path, filename, update_progr
             **unified_result
         }
         
+        # Save the analysis to MongoDB
+        MongoDBStorage.save_analysis(result_with_metadata, filename, analysis_id)
+        
         # Add to analyses list
         analyses.append({
             "metadata": {
                 "id": analysis_id,
+                "video_url": s3_video_url,
                 "filename": filename,
                 "analyzed_date": datetime.now().strftime("%B %d, %Y %H:%M")
             },
@@ -471,6 +485,48 @@ def process_unified_analysis_file(analysis_id, file_path, filename, update_progr
         # Clean up temp file on error
         if os.path.exists(file_path):
             os.remove(file_path)
+
+# Add a compatibility route that maps to our new saved-analyses API
+@app.route('/api/analyses', methods=['GET'])
+def get_analyses_compat():
+    """Compatibility route that redirects to get_saved_analyses"""
+    try:
+        limit = int(request.args.get('limit', 20))
+        skip = int(request.args.get('skip', 0))
+        
+        # Get analyses from MongoDB
+        stored_analyses = MongoDBStorage.list_analyses(limit=limit, skip=skip)
+        
+        # Format to match the expected format from the old API
+        formatted_analyses = []
+        for analysis in stored_analyses:
+            analysis_data = MongoDBStorage.get_analysis(analysis.get("id"))
+            if analysis_data:
+                # Extract video URL from metadata or fall back to content_name
+                video_url = None
+                if analysis_data.get("analysis_data", {}).get("metadata", {}).get("video_url"):
+                    video_url = analysis_data["analysis_data"]["metadata"]["video_url"]
+                elif analysis.get("content_name"):
+                    video_url = analysis.get("content_name")
+
+                formatted_analyses.append({
+                    "metadata": {
+                        "id": analysis.get("id"),
+                        "video_url": video_url,
+                        "analyzed_date": analysis.get("formatted_date", analysis.get("timestamp"))
+                    },
+                    "analysis_data": analysis_data.get("analysis_data", {})
+                })
+        
+        return jsonify({"analyses": formatted_analyses})
+    except Exception as e:
+        print(f"Error in get_analyses_compat: {e}")
+        return jsonify({"analyses": []})
+
+# Close MongoDB connection when the app is terminated
+@app.teardown_appcontext
+def shutdown_session(exception=None):
+    MongoDBStorage.close_connection()
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000) 
