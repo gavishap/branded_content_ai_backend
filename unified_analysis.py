@@ -28,12 +28,13 @@ model = genai.GenerativeModel('gemini-1.5-pro')
 # Create unified_analyses directory if it doesn't exist
 os.makedirs('unified_analyses', exist_ok=True)
 
-def run_analyses_in_parallel(video_url: str) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+def run_analyses_in_parallel(video_url: str, progress_callback=None) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     """
     Run both analysis pipelines in parallel and return their results.
     
     Args:
         video_url: URL of the video to analyze
+        progress_callback: Optional callback function to report progress
         
     Returns:
         Tuple containing (gemini_analysis, clarifai_structured_analysis)
@@ -70,10 +71,20 @@ def run_analyses_in_parallel(video_url: str) -> Tuple[Dict[str, Any], Dict[str, 
             local_filename = "temp_video_" + os.path.basename(video_url).split('?')[0] + ".mp4"
             local_path = download_video_with_ytdlp(video_url, output_path=local_filename)
             
+            # Report download complete
+            if progress_callback:
+                progress_callback("downloading_complete", 20)
+            
             # 2. Upload to S3
+            if progress_callback:
+                progress_callback("uploading_to_s3", 25)
+                
             s3_video_url = upload_to_s3(local_path, S3_BUCKET_NAME, s3_object_name=f"videos/{local_filename}")
             
             # 3. Analyze using ClarifAI models
+            if progress_callback:
+                progress_callback("clarifai_models_started", 30)
+                
             clarifai_result = analyze_video_multi_model(s3_video_url, sample_ms=125)
             
             # 4. Generate initial analysis
@@ -701,25 +712,39 @@ def save_unified_analysis(unified_analysis: Dict[str, Any]) -> str:
         print(f"Error saving unified analysis: {e}")
         raise
 
-def analyze_video(video_url: str) -> Dict[str, Any]:
+def analyze_video(video_url: str, progress_callback=None) -> Dict[str, Any]:
     """
     Main function to analyze a video URL and generate a unified analysis.
     
     Args:
         video_url: URL of the video to analyze
-        
+        progress_callback: Optional callback function to report progress
+            Function signature: progress_callback(stage: str, progress_pct: float)
+            
     Returns:
         Unified analysis combining insights from both Gemini and ClarifAI
     """
     try:
         print(f"Starting unified analysis for video: {video_url}")
         
+        # Notify start of gemini and clarifai analysis
+        if progress_callback:
+            progress_callback("gemini_started", 0)
+            progress_callback("clarifai_started", 0)
+            
         # Run both analyses in parallel
-        gemini_analysis, clarifai_analysis = run_analyses_in_parallel(video_url)
+        gemini_analysis, clarifai_analysis = run_analyses_in_parallel(video_url, progress_callback)
         
         # Check if both analyses have errors
         gemini_has_error = "error" in gemini_analysis
         clarifai_has_error = "error" in clarifai_analysis.get("metadata", {})
+        
+        # Notify completion of individual analyses
+        if not gemini_has_error and progress_callback:
+            progress_callback("gemini_complete", 40)
+            
+        if not clarifai_has_error and progress_callback:
+            progress_callback("clarifai_complete", 60)
         
         if gemini_has_error and clarifai_has_error:
             print("WARNING: Both analyses had errors. The unified analysis may be limited.")
@@ -728,9 +753,17 @@ def analyze_video(video_url: str) -> Dict[str, Any]:
         elif clarifai_has_error:
             print("WARNING: ClarifAI analysis had errors. Some insights may be limited.")
         
+        # Notify start of unified analysis generation
+        if progress_callback:
+            progress_callback("generating_unified", 70)
+            
         # Combine the analyses
         unified_analysis = combine_analyses(gemini_analysis, clarifai_analysis)
         
+        # Notify start of validation
+        if progress_callback:
+            progress_callback("validating_unified", 80)
+            
         # Add error information if any
         if "metadata" not in unified_analysis:
             unified_analysis["metadata"] = {}
