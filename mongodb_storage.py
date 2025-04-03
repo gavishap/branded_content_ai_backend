@@ -35,30 +35,43 @@ class MongoDBStorage:
     _collection = None
     
     @classmethod
-    def get_collection(cls):
-        """Get or create the MongoDB collection for analyses."""
-        if cls._collection is None:
-            # Initialize connection if not already established
-            if cls._client is None:
+    def get_collection(cls, server_selection_timeout_ms=1000, connect_timeout_ms=1000, socket_timeout_ms=1000):
+        """
+        Get MongoDB collection for analyses.
+        
+        Args:
+            server_selection_timeout_ms: Timeout for server selection in milliseconds
+            connect_timeout_ms: Timeout for connection establishment in milliseconds
+            socket_timeout_ms: Timeout for socket operations in milliseconds
+            
+        Returns:
+            MongoDB collection
+        """
+        # Initialize client if not already initialized
+        if cls._client is None:
+            try:
                 print(f"Connecting to MongoDB: {MONGODB_URI}")
-                # The tlsAllowInvalidCertificates parameter is set in the URI
-                cls._client = MongoClient(MONGODB_URI)
-                print("MongoDB client created successfully")
-                
-            # Get database
-            cls._db = cls._client[MONGODB_DB]
-            print(f"Connected to database: {MONGODB_DB}")
-            
-            # Get collection
-            cls._collection = cls._db[MONGODB_ANALYSES_COLLECTION]
-            print(f"Connected to collection: {MONGODB_ANALYSES_COLLECTION}")
-            
-            # Create indexes if needed
-            # cls._collection.create_index("id", unique=True)
-            # cls._collection.create_index("timestamp")
-            # print("Created indexes on 'id' and 'timestamp' fields")
-            
-        return cls._collection
+                cls._client = MongoClient(
+                    MONGODB_URI, 
+                    serverSelectionTimeoutMS=server_selection_timeout_ms,
+                    connectTimeoutMS=connect_timeout_ms,
+                    socketTimeoutMS=socket_timeout_ms
+                )
+                # Test connection
+                cls._client.admin.command('ping')
+                print("MongoDB connection successful")
+            except Exception as e:
+                print(f"Error initializing MongoDB client: {e}", file=sys.stderr)
+                traceback.print_exc()
+                raise
+        
+        # Get database
+        db = cls._client[MONGODB_DB]
+        
+        # Get collection
+        collection = db[MONGODB_ANALYSES_COLLECTION]
+        
+        return collection
     
     @classmethod
     def close_connection(cls):

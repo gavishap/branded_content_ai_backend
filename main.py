@@ -23,8 +23,23 @@ import atexit
 import pymongo
 
 app = Flask(__name__)
-CORS(app)
+# Update CORS configuration to allow requests from your Vercel frontend
+CORS(app, resources={r"/*": {"origins": ["https://branded-contentai.vercel.app", "http://localhost:3000"]}})
 processor = DashboardProcessor()
+
+# Add a root route for the homepage
+@app.route('/', methods=['GET'])
+def index():
+    return jsonify({
+        "status": "online",
+        "message": "Branded Content AI API is running",
+        "api_endpoints": [
+            "/api/analyses",
+            "/api/analyze-unified",
+            "/api/saved-analyses",
+            "/api/analysis-progress/{id}"
+        ]
+    })
 
 # Register the analysis blueprint
 app.register_blueprint(analysis_bp)
@@ -32,7 +47,12 @@ app.register_blueprint(analysis_bp)
 # Initialize MongoDB connection at application startup
 print("Initializing MongoDB connection...")
 try:
-    mongodb_collection = MongoDBStorage.get_collection()
+    # Set longer connection timeouts for production environment
+    mongodb_collection = MongoDBStorage.get_collection(
+        server_selection_timeout_ms=5000,  # 5 seconds
+        connect_timeout_ms=5000,
+        socket_timeout_ms=5000
+    )
     print(f"MongoDB initialized successfully")
 except Exception as e:
     print(f"Warning: Could not initialize MongoDB connection: {e}")
