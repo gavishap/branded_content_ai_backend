@@ -1,11 +1,9 @@
 annotated-types==0.7.0
 anyio==4.9.0
-awsebcli==3.21.0
 boto3==1.28.53
-botocore==1.35.99
+botocore==1.31.53
 Brotli==1.1.0
 cachetools==5.5.2
-cement==2.10.14
 certifi==2025.1.31
 charset-normalizer==3.4.1
 clarifai-grpc==9.8.1
@@ -75,3 +73,4 @@ wcwidth==0.2.13
 websockets==15.0.1
 Werkzeug==2.2.3
 yt-dlp==2025.3.31
+gunicorn==21.2.0
