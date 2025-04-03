@@ -1,11 +1,12 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import os
+import threading
+import time
 from narrative_analyzer import analyze_video_with_gemini
 import uuid
 from datetime import datetime
 from dashboard_processor import DashboardProcessor
-import time
 from clarif_ai_insights import (
     download_video_with_ytdlp, 
     analyze_video_multi_model, 
@@ -20,8 +21,9 @@ app = Flask(__name__)
 CORS(app)
 processor = DashboardProcessor()
 
-# In-memory storage for analyses
+# In-memory storage for analyses and tracking analysis progress
 analyses = []
+analysis_progress = {}  # Structure: {analysis_id: {progress, step, status, result}}
 
 @app.route('/api/analyses', methods=['GET'])
 def get_analyses():
@@ -231,40 +233,220 @@ def process_clarifai_video(video_url, video_name):
 def analyze_unified():
     """Endpoint for unified analysis combining both Gemini and ClarifAI insights."""
     try:
+        analysis_id = str(uuid.uuid4())
+        
+        # Initialize progress tracking for this analysis
+        analysis_progress[analysis_id] = {
+            "progress": 0,
+            "step": 0,
+            "status": "initializing",
+            "result": None
+        }
+        
         # Handle URL-based analysis
         if request.json and 'url' in request.json:
             video_url = request.json.get('url')
             if not video_url:
                 return jsonify({"error": "URL is required"}), 400
-                
-            # Run the unified analysis
-            print(f"\nStarting unified analysis for URL: {video_url}")
-            unified_result = analyze_video_unified(video_url)
             
-            # Create analysis ID
-            analysis_id = str(uuid.uuid4())
+            # Start analysis in background thread
+            thread = threading.Thread(
+                target=process_unified_analysis_url,
+                args=(analysis_id, video_url)
+            )
+            thread.daemon = True
+            thread.start()
             
-            # Store the analysis
-            analyses.append({
-                "metadata": {
-                    "id": analysis_id,
-                    "video_name": "Unified Analysis - " + video_url.split('/')[-1],
-                    "analyzed_date": datetime.now().strftime("%B %d, %Y %H:%M"),
-                    "type": "unified"
-                },
-                "unified_data": unified_result
-            })
-                
             return jsonify({
                 "analysis_id": analysis_id,
-                "unified_data": unified_result
+                "status": "processing",
+                "message": "Analysis started successfully. Check progress with the progress endpoint."
             })
+            
+        # Handle file upload analysis
+        elif 'file' in request.files:
+            file = request.files['file']
+            if not file:
+                return jsonify({"error": "No file selected"}), 400
+                
+            # Save the uploaded file temporarily
+            temp_path = f"temp_video_{analysis_id}.mp4"
+            file.save(temp_path)
+            
+            # Start analysis in background thread
+            thread = threading.Thread(
+                target=process_unified_analysis_file,
+                args=(analysis_id, temp_path, file.filename)
+            )
+            thread.daemon = True
+            thread.start()
+            
+            return jsonify({
+                "analysis_id": analysis_id,
+                "status": "processing",
+                "message": "Analysis started successfully. Check progress with the progress endpoint."
+            })
+            
         else:
-            return jsonify({"error": "URL is required in the request body"}), 400
+            return jsonify({"error": "Either URL or file must be provided"}), 400
             
     except Exception as e:
-        print(f"Error in unified analysis: {e}")
+        print(f"Error in analyze_unified: {e}")
         return jsonify({"error": str(e)}), 500
+
+@app.route('/api/analysis-progress/<analysis_id>', methods=['GET'])
+def get_analysis_progress(analysis_id):
+    """Get the current progress of an ongoing analysis."""
+    if analysis_id not in analysis_progress:
+        return jsonify({"error": "Analysis ID not found"}), 404
+        
+    progress_data = analysis_progress[analysis_id]
+    
+    # If analysis is complete, include the result
+    if progress_data["status"] == "completed" and progress_data["result"]:
+        return jsonify({
+            "analysis_id": analysis_id,
+            "progress": progress_data["progress"],
+            "step": progress_data["step"],
+            "status": progress_data["status"],
+            "result": progress_data["result"]
+        })
+    
+    return jsonify({
+        "analysis_id": analysis_id,
+        "progress": progress_data["progress"],
+        "step": progress_data["step"],
+        "status": progress_data["status"]
+    })
+
+def process_unified_analysis_url(analysis_id, video_url):
+    """Process a URL-based analysis in the background and update progress."""
+    try:
+        update_analysis_progress(analysis_id, 0, 0, "downloading")
+        
+        # 1. Download the video
+        local_filename = f"temp_video_{analysis_id}.mp4"
+        local_path = download_video_with_ytdlp(video_url, output_path=local_filename)
+        update_analysis_progress(analysis_id, 12, 1, "uploading")
+        
+        # 2. Upload to S3
+        s3_object_key = f"videos/{os.path.basename(local_path)}"
+        s3_video_url = upload_to_s3(local_path, S3_BUCKET_NAME, s3_object_name=s3_object_key)
+        update_analysis_progress(analysis_id, 25, 2, "running_clarifai")
+        
+        # 3. Run ClarifAI analysis
+        clarifai_result = analyze_video_multi_model(s3_video_url, sample_ms=125)
+        update_analysis_progress(analysis_id, 50, 3, "processing_gemini")
+        
+        # 4. Run Gemini analysis
+        initial_analysis = analyze_video_output(clarifai_result)
+        update_analysis_progress(analysis_id, 75, 5, "generating_structured_output")
+        
+        # 5. Create structured analysis
+        unified_result = process_analysis(initial_analysis)
+        
+        # 6. Store the result
+        result_with_metadata = {
+            "metadata": {
+                "id": analysis_id,
+                "video_url": video_url,
+                "analyzed_date": datetime.now().strftime("%B %d, %Y %H:%M"),
+                "analysis_sources": ["Gemini", "ClarifAI"]
+            },
+            **unified_result
+        }
+        
+        # Add to analyses list
+        analyses.append({
+            "metadata": {
+                "id": analysis_id,
+                "video_url": video_url,
+                "analyzed_date": datetime.now().strftime("%B %d, %Y %H:%M")
+            },
+            "analysis_data": result_with_metadata
+        })
+        
+        # Update progress to completed
+        update_analysis_progress(analysis_id, 100, 7, "completed", result_with_metadata)
+        
+        # Clean up temp file
+        if os.path.exists(local_path):
+            os.remove(local_path)
+            
+    except Exception as e:
+        print(f"Error processing URL analysis: {e}")
+        update_analysis_progress(analysis_id, 0, 0, "error", {"error": str(e)})
+        
+        # Clean up temp file on error
+        local_path = f"temp_video_{analysis_id}.mp4"
+        if os.path.exists(local_path):
+            os.remove(local_path)
+
+def process_unified_analysis_file(analysis_id, file_path, filename):
+    """Process a file-based analysis in the background and update progress."""
+    try:
+        update_analysis_progress(analysis_id, 10, 0, "preparing")
+        
+        # 1. Upload to S3
+        s3_object_key = f"videos/{os.path.basename(file_path)}"
+        s3_video_url = upload_to_s3(file_path, S3_BUCKET_NAME, s3_object_name=s3_object_key)
+        update_analysis_progress(analysis_id, 25, 2, "running_clarifai")
+        
+        # 2. Run ClarifAI analysis
+        clarifai_result = analyze_video_multi_model(s3_video_url, sample_ms=125)
+        update_analysis_progress(analysis_id, 50, 3, "processing_gemini")
+        
+        # 3. Run Gemini analysis
+        initial_analysis = analyze_video_output(clarifai_result)
+        update_analysis_progress(analysis_id, 75, 5, "generating_structured_output")
+        
+        # 4. Create structured analysis
+        unified_result = process_analysis(initial_analysis)
+        
+        # 5. Store the result
+        result_with_metadata = {
+            "metadata": {
+                "id": analysis_id,
+                "filename": filename,
+                "analyzed_date": datetime.now().strftime("%B %d, %Y %H:%M"),
+                "analysis_sources": ["Gemini", "ClarifAI"]
+            },
+            **unified_result
+        }
+        
+        # Add to analyses list
+        analyses.append({
+            "metadata": {
+                "id": analysis_id,
+                "filename": filename,
+                "analyzed_date": datetime.now().strftime("%B %d, %Y %H:%M")
+            },
+            "analysis_data": result_with_metadata
+        })
+        
+        # Update progress to completed
+        update_analysis_progress(analysis_id, 100, 7, "completed", result_with_metadata)
+        
+        # Clean up temp file
+        if os.path.exists(file_path):
+            os.remove(file_path)
+            
+    except Exception as e:
+        print(f"Error processing file analysis: {e}")
+        update_analysis_progress(analysis_id, 0, 0, "error", {"error": str(e)})
+        
+        # Clean up temp file on error
+        if os.path.exists(file_path):
+            os.remove(file_path)
+
+def update_analysis_progress(analysis_id, progress, step, status, result=None):
+    """Update the progress tracking for an analysis."""
+    if analysis_id in analysis_progress:
+        analysis_progress[analysis_id]["progress"] = progress
+        analysis_progress[analysis_id]["step"] = step
+        analysis_progress[analysis_id]["status"] = status
+        if result:
+            analysis_progress[analysis_id]["result"] = result
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000) 

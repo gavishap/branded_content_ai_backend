@@ -1,0 +1,114 @@
+=== Raw Gemini URL Response ===
+
+{
+    "Performance Metrics": {
+        "Attention Score": "88",
+        "Engagement Potential": "92",
+        "Watch Time Retention": "80%",
+        "Key Strengths": [
+            "Features well-known personalities (Mark Cuban, Graham Stephan)",
+            "Compelling 'rags-to-riches' narrative",
+            "High-interest topic (making billions, stock trading)",
+            "Engaging reaction format adds commentary and relatability"
+        ],
+        "Improvement Suggestions": [
+            "Ensure consistent audio levels between speakers/clips",
+            "Could add brief visual summaries of the key financial tactic",
+            "Optimize end screen for clearer call-to-action or related content"
+        ]
+    },
+    "Transcription": {
+        "Full Text": "This is how I made my first million and then flipped it into a billion. We set up this website called broadcast.com. We started what turned out to be the very first streaming company. On July 18th, 1998. We went public. All of a sudden, I'm worth $300,000,000 plus. and I'm sitting there thinking, \"Oh, F*ck.\" If this stock price triples... I'm a billionaire. And Yahoo! came along and made us an offer. And all of the sudden, that stock price tripled, and I was a billionaire. And I'd seen stocks go up. And I'd seen stocks go down. I sold some of the upside to that Yahoo! stock that they gave me. I protected myself by buying puts on the downside. 3 months later, the internet stock market cratered. It was called one of the top 10 Wall Street trades of all time. Wow! That is so smart. If the stock price goes up, I make money. If the stock price goes down, the puts go up, and my value stays exactly the same. Man, that worked out well.",
+        "Subtitle Coverage": {
+            "Percentage": "100%",
+            "Missing Segments": [],
+            "Quality Score": "95",
+            "Issues": [
+                "Minor timing mismatches on a few words.",
+                "One instance of censoring profanity (\"F*ck\")."
+            ]
+        }
+    },
+    "Visual Analysis": {
+        "Color Scheme": {
+            "Dominant Colors": ["#4A8CC7", "#FFFFFF", "#000000", "#E0E0E0"],
+            "Color Mood": "Neutral to Cool (business attire, interface elements)",
+            "Saturation Level": "60 - Moderate saturation, primarily from clothing and graphics.",
+            "Contrast Rating": "85 - High contrast, especially with text overlays and graphics against backgrounds.",
+            "Brand Color Alignment": "N/A - Relies on personal branding of speakers and general finance/tech aesthetics rather than a specific product brand."
+        },
+        "Editing Pace": {
+            "Average Cuts Per Second": "Approximately 0.4 cuts per second (1 cut every 2.5 seconds on average)",
+            "Total Cut Count": "Approximately 22 cuts",
+            "Pacing Analysis": "The pacing is effective, balancing Cuban's narrative with archival footage, graphics, and Stephan's reactions to maintain interest and illustrate the story."
+        },
+        "Thumbnail Analysis": {
+            "thumbnail_optimization": [
+                "Feature Mark Cuban prominently, possibly alongside Graham Stephan.",
+                "Use a large, bold text overlay highlighting the '$1 Billion' aspect.",
+                "Incorporate visual cues of wealth (money graphics) or stock charts.",
+                "Ensure high contrast and readability at small sizes for mobile feeds."
+            ]
+        }
+    },
+    "Product Analysis": {
+        "Featured Products": [
+             {
+                "Name": "Graham Stephan's Watch (Likely Richard Mille)",
+                "Screen Time": "Approx 10 seconds",
+                "Timestamp Ranges": ["0:47-0:54"],
+                "Presentation Quality": "Visible on wrist during reaction shots, but not explicitly featured or discussed as a product."
+            },
+            {
+                "Name": "Broadcast.com (Historical Mention)",
+                "Screen Time": "Mentioned contextually",
+                "Timestamp Ranges": ["0:04-0:06"],
+                "Presentation Quality": "Discussed as the vehicle for wealth creation, shown briefly via old computer screen graphic."
+            },
+             {
+                "Name": "Yahoo! (Historical Mention)",
+                "Screen Time": "Mentioned contextually",
+                "Timestamp Ranges": ["0:25-0:27", "0:36-0:37"],
+                "Presentation Quality": "Discussed as the acquirer and source of stock, shown via logo graphic."
+            }
+        ]
+    },
+    "Detailed Analysis": {
+        "In-depth Video Analysis": {
+            "Hook": "Strong hook using Mark Cuban stating he'll reveal how he turned '$1 million into $1 billion'.",
+            "Editing": "Dynamic editing combining direct address, archival footage, motion graphics (money falling, stock charts), and reaction shots, keeping the viewer engaged.",
+            "Tonality": "Cuban is engaging and straightforward. Stephan provides enthusiastic and analytical reactions.",
+            "Core Strengths": {
+                "Visuals": "Mix of clean interview shots, relevant archival footage, and illustrative graphics.",
+                "Content": "Fascinating, high-value story about wealth creation and smart financial strategy.",
+                "Pacing": "Well-paced narrative flow enhanced by reaction cuts.",
+                "Value": "Offers insight into a famous billionaire's journey and a specific, clever financial hedge.",
+                "CTA": "Implicit CTA to follow for more financial insights (typical of Graham Stephan's content)."
+            },
+            "Viral Potential": {
+                "Overall": "High viral potential due to celebrity involvement, compelling financial narrative, and easily digestible format.",
+                "Scores": {
+                    "Visuals": 75,
+                    "Emotional_Impact": 85,
+                    "Shareability": 90,
+                    "Relatability": 70,
+                    "Uniqueness": 80
+                },
+                "Reasoning": {
+                    "Visuals": "Good quality mix of sources, but not groundbreaking visually. Relies more on content.",
+                    "Emotional_Impact": "Strong impact through aspiration (billionaire story), surprise (the hedge strategy), and validation (Stephan's reaction).",
+                    "Shareability": "High practical value (trading insight) and social currency (sharing a billionaire's story). Easy to share.",
+                    "Relatability": "Relatable desire for financial success, though the scale ($1B) is aspirational. Stephan's reaction adds relatability.",
+                    "Uniqueness": "Combines a well-known story with a specific, lesser-known strategic detail and a popular reaction format, making it quite unique."
+                }
+            },
+            "Platform Recommendations": {
+                "Instagram": "Excellent for Reels due to pacing, personality focus, and financial topic.",
+                "TikTok": "Highly suitable, leverages celebrity recognition and provides quick, valuable insight.",
+                "YouTube Shorts": "Ideal format; leverages existing audiences of both Cuban and Stephan if cross-promoted."
+            }
+        }
+    }
+}
+
+=== End of URL Response ===

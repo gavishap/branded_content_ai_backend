@@ -1,0 +1,102 @@
+=== Raw Gemini URL Response ===
+
+{
+    "Performance Metrics": {
+        "Attention Score": "88",
+        "Engagement Potential": "92",
+        "Watch Time Retention": "80%",
+        "Key Strengths": [
+            "Enthusiastic presenter with clear delivery",
+            "High-interest product for a niche audience (Tesla owners/fans)",
+            "Detailed close-up shots showcasing product features effectively",
+            "Good unboxing reveal sequence"
+        ],
+        "Improvement Suggestions": [
+            "Add a clearer call-to-action beyond asking for comments (e.g., link to product)",
+            "Consider slightly more varied camera angles during the detailed showcase",
+            "Ensure consistent audio levels throughout"
+        ]
+    },
+    "Transcription": {
+        "Full Text": "I just got a package from Tesla. Now some of you guys may know that I have a Tesla Model Y. Ever since I got my Model Y, I wanted one of these, well Tesla never sold it. And just a few days ago, they came out with this in their Tesla shop. This is a 1 and 18th scale Tesla Model Y. The attention to detail on this is just incredible. The steering wheel actually works. You open up the trunk and it has a felt lining inside. I mean you can see the Tesla brakes behind each wheel. There's even little tiny seat belts with the latch that are for some reason very detailed. The seat adjustment buttons and the window controls are on it just like the real one. The side mirrors and the rearview mirror are real mirrors. But I can't open the frunk, so if anyone has any ideas on how to do that, let me know. And I just noticed this now, the windshield wipers actually move. Let me know what you guys think in the comments, but man, I am super impressed.",
+        "Subtitle Coverage": {
+            "Percentage": "100%",
+            "Missing Segments": [],
+            "Quality Score": "95",
+            "Issues": [
+                "Subtitles cover the product occasionally.",
+                "Timing slightly fast in some segments."
+            ]
+        }
+    },
+    "Visual Analysis": {
+        "Color Scheme": {
+            "Dominant Colors": ["#FFFFFF", "#000000", "#808080"],
+            "Color Mood": "Neutral/Modern - White car, black packaging, grey chair/background elements, accented by colored background lights.",
+            "Saturation Level": "70 - Colors are present, especially background lights, but primary focus (car, presenter) is relatively neutral.",
+            "Contrast Rating": "85 - Strong contrast between the white car, black interior/wheels, and the presenter/background.",
+            "Brand Color Alignment": "Good alignment with Tesla's typical black, white, and red (brakes) color palette."
+        },
+        "Editing Pace": {
+            "Average Cuts Per Second": "Approximately 0.4 cuts per second (1 cut every 2.5 seconds on average)",
+            "Total Cut Count": "Approximately 23 cuts",
+            "Pacing Analysis": "The pacing is generally good, allowing viewers to see details but keeping the video moving. Starts faster, slows for detail shots."
+        },
+        "Thumbnail Analysis": {
+            "thumbnail_optimization": [
+                "Use a high-contrast image, potentially the presenter holding the model car prominently.",
+                "Include bold, clear text overlay like 'Tesla Sent Me THIS!' or '1:18 Model Y Unboxing'.",
+                "Feature a close-up showing the detail of the model car.",
+                "Ensure the thumbnail is visually appealing and understandable even at small sizes on mobile feeds."
+            ]
+        }
+    },
+    "Product Analysis": {
+        "Featured Products": [
+            {
+                "Name": "Tesla Model Y 1:18 Scale Diecast Model",
+                "Screen Time": "Approximately 50 seconds",
+                "Timestamp Ranges": ["0:00-0:19", "0:19-0:57"],
+                "Presentation Quality": "Excellent. Clear close-ups, demonstration of moving parts (doors, wheels, trunk, steering, wipers), focus on intricate details (interior, brakes, seatbelts)."
+            }
+        ]
+    },
+    "Detailed Analysis": {
+        "In-depth Video Analysis": {
+            "Hook": "Effective hook using brand recognition ('package from Tesla') and immediate visual of the box, creating curiosity.",
+            "Editing": "Clean cuts, effective use of close-ups to highlight product features. Pacing keeps the viewer engaged through the unboxing and feature showcase.",
+            "Tonality": "Enthusiastic, genuinely excited, and impressed, which translates well to the viewer.",
+            "Core Strengths": {
+                "Visuals": "Clear, well-lit footage. Excellent close-ups of the product details.",
+                "Content": "Informative showcase of a desirable niche product, highlighting specific features.",
+                "Pacing": "Good balance between the initial reveal and the detailed examination of the model.",
+                "Value": "Provides a vicarious unboxing experience and detailed look at a product many Tesla fans would be interested in.",
+                "CTA": "Directly asks for viewer feedback in the comments, encouraging engagement."
+            },
+            "Viral Potential": {
+                "Overall": "Moderate viral potential within its niche. Strong product appeal and good execution, but lacks broad emotional triggers or extreme uniqueness for wider virality.",
+                "Scores": {
+                    "Visuals": 85,
+                    "Emotional_Impact": 60,
+                    "Shareability": 75,
+                    "Relatability": 70,
+                    "Uniqueness": 72
+                },
+                "Reasoning": {
+                    "Visuals": "High quality, clear visuals effectively showcase the product's details, scoring well.",
+                    "Emotional_Impact": "Relies mainly on excitement and product desire, lacking deeper emotional resonance like humor, strong surprise (beyond the product itself), or inspiration.",
+                    "Shareability": "High practical value for Tesla enthusiasts or scale model collectors who would share within their communities.",
+                    "Relatability": "Connects with the desire for merchandise related to owned items (the presenter's Model Y) and collector interest.",
+                    "Uniqueness": "Well-executed unboxing/review format, but the format itself isn't highly unique. The product's newness and detail provide some differentiation."
+                }
+            },
+            "Platform Recommendations": {
+                "Instagram": "Reels format, focusing on quick cuts showing the best details and moving parts. Use relevant hashtags like #Tesla #ModelY #Diecast #Unboxing.",
+                "TikTok": "Utilize trending sounds if appropriate, emphasize the hook, and focus on the most 'wow' features (moving steering, tiny seatbelts).",
+                "YouTube Shorts": "Keep it concise, highlight the presenter's excitement and the coolest details. Ensure clear text overlays if needed."
+            }
+        }
+    }
+}
+
+=== End of URL Response ===
