@@ -300,6 +300,46 @@ def extract_json_from_response(response_text):
         print(f"Response text: {response_text}")
         raise ValueError(f"Error processing response: {str(e)}")
 
+def wait_for_file_active(file, max_attempts=20, sleep_duration=3):
+    """Wait for an uploaded file to become active before using it.
+    
+    Args:
+        file: The uploaded file object
+        max_attempts: Maximum number of attempts before giving up
+        sleep_duration: Time to sleep between attempts in seconds
+        
+    Returns:
+        The updated file object once active
+    """
+    print(f"Waiting for file {file.name} to become active...")
+    
+    for attempt in range(max_attempts):
+        try:
+            # Check file status by retrieving it again
+            updated_file = client.files.get(name=file.name)
+            
+            # Print status information
+            print(f"Attempt {attempt+1}/{max_attempts}: File state is {updated_file.state}")
+            
+            if updated_file.state == "ACTIVE":
+                print(f"✓ File is now active! ({attempt+1} attempts)")
+                return updated_file
+                
+            elif updated_file.state == "FAILED":
+                raise Exception(f"File processing failed: {updated_file.state_message}")
+                
+            # If still processing, wait and try again
+            print(f"Waiting {sleep_duration}s for file to become active...")
+            time.sleep(sleep_duration)
+            
+        except Exception as e:
+            print(f"Error checking file status: {e}")
+            # Continue trying despite errors
+            time.sleep(sleep_duration)
+    
+    # If we get here, we've exceeded max attempts
+    raise Exception(f"Timed out waiting for file {file.name} to become active after {max_attempts} attempts")
+
 def analyze_video_with_gemini(path_or_url, is_url_prompt=False, max_retries=3, initial_retry_delay=2):
     """Analyzes a video using Gemini 2.5 Pro with retry mechanism for server errors."""
     retries = 0
@@ -312,8 +352,111 @@ def analyze_video_with_gemini(path_or_url, is_url_prompt=False, max_retries=3, i
             print(f"Is URL analysis: {is_url_prompt}")
 
             model = "gemini-2.5-pro-exp-03-25"
-
-            if is_url_prompt:
+            
+            # For file analysis, we need to use the client.files.upload method
+            if not is_url_prompt:
+                print("\nProcessing file analysis using direct file upload...")
+                try:
+                    # Upload the file directly using client.files.upload
+                    print(f"Uploading local file: {path_or_url}")
+                    uploaded_file = client.files.upload(file=path_or_url)
+                    print(f"Uploaded file as: {uploaded_file.uri}")
+                    
+                    # Wait for the file to become active before proceeding
+                    active_file = wait_for_file_active(uploaded_file)
+                    
+                    # Now use the uploaded file URI
+                    contents = [
+                        types.Content(
+                            role="user",
+                            parts=[
+                                types.Part.from_uri(
+                                    file_uri=active_file.uri,
+                                    mime_type=active_file.mime_type,
+                                ),
+                            ],
+                        ),
+                        types.Content(
+                            role="user",
+                            parts=[
+                                types.Part.from_text(text=_build_analysis_prompt()),
+                            ],
+                        ),
+                    ]
+                    
+                    # Configure generation config
+                    generate_content_config = types.GenerateContentConfig(
+                        response_mime_type="application/json",
+                    )
+                    
+                    # Save the raw response to a file
+                    timestamp = time.strftime("%Y%m%d_%H%M%S")
+                    raw_filename = f"raw_gemini_file_response_{timestamp}.txt"
+                    
+                    with open(raw_filename, "w", encoding="utf-8") as f:
+                        f.write("=== Raw Gemini File Response ===\n\n")
+                        
+                        try:
+                            # Use the generate_content_stream
+                            print("Sending file analysis request to Gemini...")
+                            for chunk in client.models.generate_content_stream(
+                                model=model,
+                                contents=contents,
+                                config=generate_content_config,
+                            ):
+                                if chunk.text:
+                                    f.write(chunk.text)
+                                    print(chunk.text, end="")  # Print to console as well
+                                    f.flush()  # Make sure it's written immediately
+                        except Exception as e:
+                            error_msg = f"\n\nError during file generation: {str(e)}"
+                            f.write(error_msg)
+                            print(error_msg)
+                            
+                            # Check if this is a server error (500) that we should retry
+                            if "500 INTERNAL" in str(e) and retries < max_retries:
+                                retries += 1
+                                actual_delay = retry_delay + (random.random() * 0.5)
+                                print(f"\nServer error detected. Retrying in {actual_delay:.1f} seconds (attempt {retries}/{max_retries})...")
+                                time.sleep(actual_delay)
+                                # Exponential backoff for next retry
+                                retry_delay = min(retry_delay * 2, 30)  # Cap at 30 seconds
+                                continue
+                        
+                        f.write("\n\n=== End of File Response ===")
+                    
+                    print(f"\nSaved raw file response to: {raw_filename}")
+                    
+                    # Load the file and return its content
+                    with open(raw_filename, "r", encoding="utf-8") as f:
+                        raw_content = f.read()
+                    
+                    # Try to extract JSON from the raw content
+                    try:
+                        result = extract_json_from_response(raw_content)
+                        if result:
+                            print("Successfully extracted JSON response from file upload")
+                            return result
+                    except Exception as e:
+                        # Check if this is a parsing error we should retry
+                        if retries < max_retries:
+                            retries += 1
+                            actual_delay = retry_delay + (random.random() * 0.5)
+                            print(f"\nJSON parsing error: {str(e)}. Retrying in {actual_delay:.1f} seconds (attempt {retries}/{max_retries})...")
+                            time.sleep(actual_delay)
+                            # Exponential backoff for next retry
+                            retry_delay = min(retry_delay * 2, 30)
+                            continue
+                        else:
+                            print(f"Error extracting JSON after {max_retries} retries: {str(e)}")
+                            return {"error": f"Failed to extract JSON after {max_retries} retries: {str(e)}"}
+                    
+                    return {"error": "Failed to extract valid JSON from file response"}
+                    
+                except Exception as upload_error:
+                    print(f"\nFile upload/processing failed: {str(upload_error)}")
+                    raise
+            elif is_url_prompt:
                 print("\nProcessing URL analysis...")
                 # Format the request for URL
                 contents = [
@@ -366,7 +509,7 @@ def analyze_video_with_gemini(path_or_url, is_url_prompt=False, max_retries=3, i
                         # Check if this is a server error (500) that we should retry
                         if "500 INTERNAL" in str(e) and retries < max_retries:
                             retries += 1
-                            # Add some jitter to retry delay to avoid thundering herd
+                            # Add some jitter to retry delay
                             actual_delay = retry_delay + (random.random() * 0.5)
                             print(f"\nServer error detected. Retrying in {actual_delay:.1f} seconds (attempt {retries}/{max_retries})...")
                             time.sleep(actual_delay)
@@ -402,100 +545,6 @@ def analyze_video_with_gemini(path_or_url, is_url_prompt=False, max_retries=3, i
                     else:
                         print(f"Error extracting JSON after {max_retries} retries: {str(e)}")
                         return {"error": f"Failed to extract JSON after {max_retries} retries: {str(e)}"}
-                
-                # If we've exhausted retries or had a non-retryable error
-                if retries >= max_retries:
-                    return {"error": f"Failed to get valid response after {max_retries} retries"}
-                    
-                return {"error": "Failed to extract valid JSON from URL response"}
-                
-            else:
-                print("\nProcessing file analysis...")
-                # For files, use the file path directly
-                mime_type = get_video_mime_type(path_or_url)
-                
-                try:
-                    # Upload the file
-                    print("Uploading file...")
-                    files = [
-                        client.files.upload(file=path_or_url),
-                    ]
-                    print(f"Uploaded file as: {files[0].uri}")
-                    
-                    # Wait for the file to become active
-                    wait_for_files_active(files)
-                    
-                    # Format the request using the uploaded file
-                    contents = [
-                        types.Content(
-                            role="user",
-                            parts=[
-                                types.Part.from_uri(
-                                    file_uri=files[0].uri,
-                                    mime_type=mime_type,
-                                ),
-                            ],
-                        ),
-                        types.Content(
-                            role="user",
-                            parts=[
-                                types.Part.from_text(text=_build_analysis_prompt()),
-                            ],
-                        ),
-                    ]
-
-                    # Configure generation exactly as in test.py
-                    generate_content_config = types.GenerateContentConfig(
-                        response_mime_type="application/json",
-                    )
-
-                    # Save the raw response to a file
-                    timestamp = time.strftime("%Y%m%d_%H%M%S")
-                    raw_filename = f"raw_gemini_response_{timestamp}.txt"
-                    
-                    with open(raw_filename, "w", encoding="utf-8") as f:
-                        f.write("=== Raw Gemini Response ===\n\n")
-                        
-                        try:
-                            # Use the generate_content_stream exactly as in test.py
-                            print("Sending request to Gemini...")
-                            for chunk in client.models.generate_content_stream(
-                                model=model,
-                                contents=contents,
-                                config=generate_content_config,
-                            ):
-                                if chunk.text:
-                                    f.write(chunk.text)
-                                    print(chunk.text, end="")  # Print to console as well
-                                    f.flush()  # Make sure it's written immediately
-                        except Exception as e:
-                            error_msg = f"\n\nError during generation: {str(e)}"
-                            f.write(error_msg)
-                            print(error_msg)
-                        
-                        f.write("\n\n=== End of Response ===")
-                    
-                    print(f"\nSaved raw response to: {raw_filename}")
-                    
-                    # Let's also load the file and return its content as the result
-                    with open(raw_filename, "r", encoding="utf-8") as f:
-                        raw_content = f.read()
-                    
-                    # Try to extract JSON from the raw content
-                    try:
-                        result = extract_json_from_response(raw_content)
-                        if result:
-                            print("Successfully extracted JSON response from raw file")
-                            return result
-                    except Exception as e:
-                        print(f"Error extracting JSON: {str(e)}")
-                        return {"error": f"Failed to extract JSON: {str(e)}"}
-                    
-                    return {"error": "Failed to extract valid JSON from response"}
-                    
-                except Exception as upload_error:
-                    print(f"\nFile upload/activation failed: {str(upload_error)}")
-                    raise
                 
             # If we've reached here successfully, break the retry loop
             break
@@ -581,24 +630,48 @@ def extract_list(text, pattern):
     return [item.strip().strip('"') for item in items if item.strip()]
 
 # Test function for development
-def test_analysis():
+def test_analysis(file_path=None):
     try:
-        # Test with Tesla video file
-        file_path = "tesla.mp4"
+        # Use provided file path or default test file
+        if not file_path:
+            # Default test file
+            file_path = "tesla.mp4"
+            
         if not os.path.exists(file_path):
             print(f"Error: Video file '{file_path}' not found")
             return
             
-        print(f"Analyzing video: {file_path}")
-        analysis = analyze_video_with_gemini(file_path)
+        print(f"Analyzing video using direct file upload: {file_path}")
+        analysis = analyze_video_with_gemini(file_path, is_url_prompt=False)
         
         # Pretty print the results
         print("\nAnalysis Results:")
-        if "raw_response" in analysis:
-            print("Warning: Returning raw response due to parsing error")
-            print(analysis["raw_response"])
+        if "error" in analysis:
+            print(f"Analysis Error: {analysis['error']}")
         else:
-            print(json.dumps(analysis, indent=2))
+            # Save the results to a JSON file for inspection
+            results_file = f"analysis_results_{time.strftime('%Y%m%d_%H%M%S')}.json"
+            with open(results_file, "w", encoding="utf-8") as f:
+                json.dump(analysis, f, indent=2)
+            print(f"Analysis results saved to: {results_file}")
+            
+            # Print a brief summary
+            if "analysis" in analysis:
+                print("\nAnalysis Summary:")
+                
+                # Extract performance metrics
+                performance = analysis["analysis"].get("Performance Metrics", {})
+                if performance:
+                    print(f"Attention Score: {performance.get('Attention Score', 'N/A')}")
+                    print(f"Engagement Potential: {performance.get('Engagement Potential', 'N/A')}")
+                    print(f"Watch Time Retention: {performance.get('Watch Time Retention', 'N/A')}")
+                    
+                    # Print key strengths
+                    strengths = performance.get("Key Strengths", [])
+                    if strengths:
+                        print("\nKey Strengths:")
+                        for i, strength in enumerate(strengths[:3], 1):
+                            print(f"  {i}. {strength}")
         
     except Exception as e:
         print(f"Analysis Error: {str(e)}")
@@ -607,4 +680,13 @@ def test_analysis():
         traceback.print_exc()
 
 if __name__ == "__main__":
-    test_analysis() 
+    import sys
+    
+    # Check if a file path is provided as a command-line argument
+    if len(sys.argv) > 1:
+        test_file = sys.argv[1]
+        print(f"Using provided file: {test_file}")
+        test_analysis(test_file)
+    else:
+        print("No file specified, using default test file")
+        test_analysis() 

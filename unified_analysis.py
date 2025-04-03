@@ -28,12 +28,12 @@ model = genai.GenerativeModel('gemini-1.5-pro')
 # Create unified_analyses directory if it doesn't exist
 os.makedirs('unified_analyses', exist_ok=True)
 
-def run_analyses_in_parallel(video_url: str, progress_callback=None) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+def run_analyses_in_parallel(video_url_or_path: str, progress_callback=None) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     """
     Run both analysis pipelines in parallel and return their results.
     
     Args:
-        video_url: URL of the video to analyze
+        video_url_or_path: URL of the video or path to local video file
         progress_callback: Optional callback function to report progress
         
     Returns:
@@ -44,13 +44,23 @@ def run_analyses_in_parallel(video_url: str, progress_callback=None) -> Tuple[Di
     gemini_error = None
     clarifai_error = None
     
+    # Determine if we're dealing with a URL or local file
+    is_url = video_url_or_path.startswith(('http://', 'https://', 's3://'))
+    
     # Create a function for Gemini analysis pipeline
     def run_gemini_analysis():
         try:
             print("Starting Gemini analysis pipeline...")
             from narrative_analyzer import analyze_video_with_gemini
+            
+            # Determine if we have a URL or a local file path
+            is_url = video_url_or_path.startswith(('http://', 'https://', 's3://'))
+            
+            print(f"Analyzing using Gemini: {'URL' if is_url else 'Local File'}")
+            
             # Use the retry mechanism built into the function
-            result = analyze_video_with_gemini(video_url, is_url_prompt=True, max_retries=3, initial_retry_delay=2)
+            # Set is_url_prompt=True for URLs, False for file paths
+            result = analyze_video_with_gemini(video_url_or_path, is_url_prompt=is_url, max_retries=3, initial_retry_delay=2)
             
             # Check if there was an error
             if "error" in result:
@@ -65,21 +75,32 @@ def run_analyses_in_parallel(video_url: str, progress_callback=None) -> Tuple[Di
     
     # Create a function for ClarifAI analysis pipeline
     def run_clarifai_analysis():
+        # For local files, we need to upload to S3 first
+        s3_video_url = None
+        local_path = None
+        
         try:
             print("Starting ClarifAI analysis pipeline...")
-            # 1. Download the video
-            local_filename = "temp_video_" + os.path.basename(video_url).split('?')[0] + ".mp4"
-            local_path = download_video_with_ytdlp(video_url, output_path=local_filename)
             
-            # Report download complete
-            if progress_callback:
+            if is_url:
+                # If it's a URL, download it first
+                local_filename = "temp_video_" + os.path.basename(video_url_or_path).split('?')[0] + ".mp4"
+                local_path = download_video_with_ytdlp(video_url_or_path, output_path=local_filename)
+            else:
+                # If it's a local file, use it directly
+                local_path = video_url_or_path
+                local_filename = os.path.basename(local_path)
+            
+            # Report download complete if applicable
+            if is_url and progress_callback:
                 progress_callback("downloading_complete", 20)
             
             # 2. Upload to S3
             if progress_callback:
                 progress_callback("uploading_to_s3", 25)
-                
-            s3_video_url = upload_to_s3(local_path, S3_BUCKET_NAME, s3_object_name=f"videos/{local_filename}")
+            
+            s3_object_key = f"videos/{os.path.basename(local_path)}"
+            s3_video_url = upload_to_s3(local_path, S3_BUCKET_NAME, s3_object_name=s3_object_key)
             
             # 3. Analyze using ClarifAI models
             if progress_callback:
@@ -93,14 +114,22 @@ def run_analyses_in_parallel(video_url: str, progress_callback=None) -> Tuple[Di
             # 5. Generate structured analysis
             structured_result = process_analysis(initial_analysis)
             
-            # 6. Clean up local file
-            if os.path.exists(local_path):
+            # 6. Clean up local file if we downloaded it
+            if is_url and local_path and os.path.exists(local_path):
                 os.remove(local_path)
                 
             print("ClarifAI analysis pipeline completed successfully")
             return structured_result
         except Exception as e:
             print(f"Error in ClarifAI analysis pipeline: {e}")
+            
+            # Clean up resources on error
+            if is_url and local_path and os.path.exists(local_path):
+                try:
+                    os.remove(local_path)
+                except:
+                    pass
+                    
             return {"error": str(e)}
     
     # Run both analyses in parallel
@@ -162,7 +191,7 @@ def run_analyses_in_parallel(video_url: str, progress_callback=None) -> Tuple[Di
             "error": gemini_error,
             "timestamp": datetime.now().isoformat(),
             "id": "gemini_fallback",
-            "video_url": video_url
+            "video_url": video_url_or_path
         }
     
     if clarifai_structured_analysis is None:
@@ -712,12 +741,12 @@ def save_unified_analysis(unified_analysis: Dict[str, Any]) -> str:
         print(f"Error saving unified analysis: {e}")
         raise
 
-def analyze_video(video_url: str, progress_callback=None) -> Dict[str, Any]:
+def analyze_video(video_url_or_path: str, progress_callback=None) -> Dict[str, Any]:
     """
-    Main function to analyze a video URL and generate a unified analysis.
+    Main function to analyze a video URL or file path and generate a unified analysis.
     
     Args:
-        video_url: URL of the video to analyze
+        video_url_or_path: URL of the video or path to a local video file
         progress_callback: Optional callback function to report progress
             Function signature: progress_callback(stage: str, progress_pct: float)
             
@@ -725,7 +754,9 @@ def analyze_video(video_url: str, progress_callback=None) -> Dict[str, Any]:
         Unified analysis combining insights from both Gemini and ClarifAI
     """
     try:
-        print(f"Starting unified analysis for video: {video_url}")
+        is_url = video_url_or_path.startswith(('http://', 'https://', 's3://'))
+        source_type = "URL" if is_url else "file"
+        print(f"Starting unified analysis for video {source_type}: {video_url_or_path}")
         
         # Notify start of gemini and clarifai analysis
         if progress_callback:
@@ -733,7 +764,7 @@ def analyze_video(video_url: str, progress_callback=None) -> Dict[str, Any]:
             progress_callback("clarifai_started", 0)
             
         # Run both analyses in parallel
-        gemini_analysis, clarifai_analysis = run_analyses_in_parallel(video_url, progress_callback)
+        gemini_analysis, clarifai_analysis = run_analyses_in_parallel(video_url_or_path, progress_callback)
         
         # Check if both analyses have errors
         gemini_has_error = "error" in gemini_analysis
@@ -786,7 +817,7 @@ def analyze_video(video_url: str, progress_callback=None) -> Dict[str, Any]:
         error_analysis = {
             "metadata": {
                 "timestamp": datetime.now().isoformat(),
-                "video_id": "error_" + os.path.basename(video_url).split('?')[0],
+                "video_id": "error_" + os.path.basename(video_url_or_path).split('?')[0],
                 "has_errors": True,
                 "error_details": {
                     "main_error": str(e)
@@ -810,24 +841,56 @@ def analyze_video(video_url: str, progress_callback=None) -> Dict[str, Any]:
         return error_analysis
 
 if __name__ == "__main__":
-    # Example usage
-    video_url = "https://www.youtube.com/shorts/Ed8tZ-Ny36I"
-    try:
+    import sys
+    import argparse
+    
+    parser = argparse.ArgumentParser(description='Test unified video analysis with URL or local file')
+    parser.add_argument('--url', type=str, help='URL of the video to analyze')
+    parser.add_argument('--file', type=str, help='Path to local video file to analyze')
+    
+    args = parser.parse_args()
+    
+    if args.url:
+        # Test with URL
+        print(f"Starting unified analysis test with video URL: {args.url}")
+        result = analyze_video(args.url)
+        print("Analysis completed")
+        
+        # Save result to file for inspection
+        timestamp = time.strftime("%Y%m%d_%H%M%S")
+        output_file = f"unified_url_analysis_{timestamp}.json"
+        with open(output_file, 'w', encoding='utf-8') as f:
+            json.dump(result, f, indent=2)
+        print(f"Analysis saved to: {output_file}")
+        
+    elif args.file:
+        # Test with local file
+        if not os.path.exists(args.file):
+            print(f"Error: File not found: {args.file}")
+            sys.exit(1)
+            
+        print(f"Starting unified analysis test with local file: {args.file}")
+        result = analyze_video(args.file)
+        print("Analysis completed")
+        
+        # Save result to file for inspection
+        timestamp = time.strftime("%Y%m%d_%H%M%S")
+        output_file = f"unified_file_analysis_{timestamp}.json"
+        with open(output_file, 'w', encoding='utf-8') as f:
+            json.dump(result, f, indent=2)
+        print(f"Analysis saved to: {output_file}")
+        
+    else:
+        # Default test with a sample YouTube video
+        video_url = "https://www.youtube.com/shorts/Ed8tZ-Ny36I"
+        print("No URL or file specified. Using default test URL.")
         print(f"Starting unified analysis test with video: {video_url}")
         result = analyze_video(video_url)
-        print("\n--- Unified Analysis Complete ---")
-        print("Unified analysis has been saved and is ready for frontend use")
+        print("Analysis completed")
         
-        # Verify the result has the expected structure
-        expected_keys = ["metadata", "summary", "performance_metrics"]
-        missing_keys = [key for key in expected_keys if key not in result]
-        
-        if missing_keys:
-            print(f"Warning: Final analysis is missing these expected sections: {missing_keys}")
-        else:
-            print("✓ Final analysis contains all expected top-level sections")
-            
-    except Exception as e:
-        print(f"Error in unified analysis test: {e}")
-        import traceback
-        traceback.print_exc() 
+        # Save result to file for inspection
+        timestamp = time.strftime("%Y%m%d_%H%M%S")
+        output_file = f"unified_analysis_{timestamp}.json"
+        with open(output_file, 'w', encoding='utf-8') as f:
+            json.dump(result, f, indent=2)
+        print(f"Analysis saved to: {output_file}") 

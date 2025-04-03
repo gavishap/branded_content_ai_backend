@@ -1,7 +1,21 @@
 # Temporary files
 temp_video.mp4
 temp_video_*.mp4
+# Video files
+**/*.mp4
+**/*.mov
+**/*.avi
+**/*.mpeg
+**/*.webm
 
+# Analysis results & raw responses
+**/raw_gemini_response_*.txt
+**/raw_gemini_url_response_*.txt
+**/raw_gemini_file_response_*.txt
+**/analysis_results_*.json
+**/unified_analysis_*.json
+**/unified_url_analysis_*.json
+**/unified_file_analysis_*.json
 # Analysis results & raw responses
 raw_gemini_response_*.txt
 raw_gemini_url_response_*.txt

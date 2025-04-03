@@ -18,6 +18,7 @@ from structured_analysis import process_analysis
 from unified_analysis import analyze_video as analyze_video_unified
 from mongodb_storage import MongoDBStorage
 from api_routes import analysis_bp
+import traceback
 
 app = Flask(__name__)
 CORS(app)
@@ -279,8 +280,11 @@ def analyze_unified():
             # Always update the progress percentage
             analysis_progress[analysis_id]["progress"] = progress
         
-        # Handle URL-based analysis
-        if request.json and 'url' in request.json:
+        # Check if we're getting a URL or a file upload
+        content_type = request.headers.get('Content-Type', '')
+        
+        # Handle URL-based analysis (application/json)
+        if 'application/json' in content_type and request.json and 'url' in request.json:
             video_url = request.json.get('url')
             if not video_url:
                 return jsonify({"error": "URL is required"}), 400
@@ -299,15 +303,24 @@ def analyze_unified():
                 "message": "Analysis started successfully. Check progress with the progress endpoint."
             })
             
-        # Handle file upload analysis
-        elif 'file' in request.files:
+        # Handle file upload analysis (multipart/form-data)
+        elif 'multipart/form-data' in content_type or request.files:
+            print(f"Processing file upload with content type: {content_type}")
+            print(f"Files in request: {list(request.files.keys())}")
+            
+            if 'file' not in request.files:
+                return jsonify({"error": "No file part in the request"}), 400
+                
             file = request.files['file']
-            if not file:
+            if not file or file.filename == '':
                 return jsonify({"error": "No file selected"}), 400
+            
+            print(f"Received file upload: {file.filename}, Content-Type: {file.content_type}, Size: {file.content_length}")
                 
             # Save the uploaded file temporarily
             temp_path = f"temp_video_{analysis_id}.mp4"
             file.save(temp_path)
+            print(f"Saved temporary file to {temp_path}")
             
             # Start analysis in background thread
             thread = threading.Thread(
@@ -324,10 +337,11 @@ def analyze_unified():
             })
             
         else:
-            return jsonify({"error": "Either URL or file must be provided"}), 400
+            return jsonify({"error": "Either URL or file must be provided. Ensure Content-Type is set correctly (application/json for URLs or multipart/form-data for files)."}), 400
             
     except Exception as e:
         print(f"Error in analyze_unified: {e}")
+        traceback.print_exc()  # Print full traceback for debugging
         return jsonify({"error": str(e)}), 500
 
 @app.route('/api/analysis-progress/<analysis_id>', methods=['GET'])
@@ -420,11 +434,26 @@ def process_unified_analysis_file(analysis_id, file_path, filename, update_progr
     """Process a file-based analysis in the background and update progress."""
     try:
         update_progress_callback("initializing", 5)
+        print(f"Starting file analysis process for {filename} at {file_path}")
+        
+        # Check if file exists and is accessible
+        if not os.path.exists(file_path):
+            raise FileNotFoundError(f"Temporary file {file_path} not found")
+        
+        # Check file size
+        file_size = os.path.getsize(file_path)
+        print(f"File size: {file_size} bytes")
         
         # First, upload the file to a temporary S3 location to get a URL
         update_progress_callback("uploading_to_s3", 10)
         s3_object_key = f"videos/{os.path.basename(file_path)}"
-        s3_video_url = upload_to_s3(file_path, S3_BUCKET_NAME, s3_object_name=s3_object_key)
+        try:
+            s3_video_url = upload_to_s3(file_path, S3_BUCKET_NAME, s3_object_name=s3_object_key)
+            print(f"Successfully uploaded to S3: {s3_video_url}")
+        except Exception as e:
+            print(f"Error uploading to S3: {e}")
+            traceback.print_exc()
+            raise
         
         # Use the unified analysis function that runs Gemini and ClarifAI in parallel
         update_progress_callback("preparing", 15)
@@ -433,6 +462,7 @@ def process_unified_analysis_file(analysis_id, file_path, filename, update_progr
         # Track the progress of the analysis
         def progress_callback(stage, progress_pct):
             update_progress_callback(stage, progress_pct)
+            print(f"Analysis progress: {stage} - {progress_pct}%")
         
         # Run the unified analysis with progress callback
         unified_result = analyze_video_unified(s3_video_url, progress_callback)
