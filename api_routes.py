@@ -10,10 +10,10 @@ analysis_bp = Blueprint('analysis', __name__)
 
 # Helper function to add CORS headers to responses
 def add_cors_headers(response):
-    response.headers.add('Access-Control-Allow-Origin', 'https://branded-contentai.vercel.app')
-    response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
-    response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
-    response.headers.add('Access-Control-Allow-Credentials', 'true')
+    response.headers.set('Access-Control-Allow-Origin', 'https://branded-content-ai.vercel.app')
+    response.headers.set('Access-Control-Allow-Headers', 'Content-Type,Authorization')
+    response.headers.set('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
+    response.headers.set('Access-Control-Allow-Credentials', 'true')
     return response
 
 @analysis_bp.route('/api/saved-analyses', methods=['GET', 'OPTIONS'])

@@ -61,13 +61,15 @@ class MongoDBStorage:
                 print(f"Connecting to MongoDB with modified URI")
                 
                 # When deployed on Heroku, we need to allow invalid certs
+                # But we can't use ssl_cert_reqs as it's not supported in this version
                 cls._client = MongoClient(
                     uri, 
                     serverSelectionTimeoutMS=server_selection_timeout_ms,
                     connectTimeoutMS=connect_timeout_ms,
                     socketTimeoutMS=socket_timeout_ms,
-                    ssl=True,
-                    ssl_cert_reqs=False  # Don't verify SSL certificate
+                    ssl=True
+                    # Remove the ssl_cert_reqs parameter as it's not supported
+                    # ssl_cert_reqs=False  # Don't verify SSL certificate
                 )
                 
                 # Test connection
