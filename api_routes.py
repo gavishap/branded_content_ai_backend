@@ -1,4 +1,4 @@
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, make_response
 from mongodb_storage import MongoDBStorage
 from datetime import datetime
 from typing import Dict, Any
@@ -8,7 +8,15 @@ import json
 # Create a blueprint for analysis routes
 analysis_bp = Blueprint('analysis', __name__)
 
-@analysis_bp.route('/api/saved-analyses', methods=['GET'])
+# Helper function to add CORS headers to responses
+def add_cors_headers(response):
+    response.headers.add('Access-Control-Allow-Origin', 'https://branded-contentai.vercel.app')
+    response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
+    response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
+    response.headers.add('Access-Control-Allow-Credentials', 'true')
+    return response
+
+@analysis_bp.route('/api/saved-analyses', methods=['GET', 'OPTIONS'])
 def get_saved_analyses():
     """
     Get a list of all saved analyses with pagination.
@@ -17,6 +25,11 @@ def get_saved_analyses():
     - limit: Maximum number of analyses to return (default: 20)
     - skip: Number of analyses to skip (default: 0)
     """
+    # Handle preflight OPTIONS request
+    if request.method == 'OPTIONS':
+        response = make_response()
+        return add_cors_headers(response)
+        
     try:
         limit = int(request.args.get('limit', 20))
         skip = int(request.args.get('skip', 0))
@@ -42,8 +55,8 @@ def get_saved_analyses():
             except:
                 total_count = len(analyses)
             
-            # Return the list of analyses
-            return jsonify({
+            # Return the list of analyses with CORS headers
+            response = jsonify({
                 "success": True,
                 "analyses": analyses,
                 "total": total_count,
@@ -51,10 +64,12 @@ def get_saved_analyses():
                 "skip": skip,
                 "has_more": skip + len(analyses) < total_count
             })
+            return add_cors_headers(response)
+            
         except Exception as db_error:
             print(f"Database error in get_saved_analyses: {str(db_error)}")
             # Return empty list on database errors
-            return jsonify({
+            response = jsonify({
                 "success": True,  # Return success:true to prevent frontend errors
                 "analyses": [],
                 "total": 0,
@@ -63,66 +78,84 @@ def get_saved_analyses():
                 "has_more": False,
                 "message": "Could not retrieve analyses from database"
             })
+            return add_cors_headers(response)
             
     except Exception as e:
-        return jsonify({
+        response = jsonify({
             "success": False,
             "error": str(e)
         }), 500
+        return add_cors_headers(response)
 
-@analysis_bp.route('/api/saved-analyses/<analysis_id>', methods=['GET'])
+@analysis_bp.route('/api/saved-analyses/<analysis_id>', methods=['GET', 'OPTIONS'])
 def get_saved_analysis(analysis_id):
     """
     Get a specific analysis by ID.
     """
+    # Handle preflight OPTIONS request
+    if request.method == 'OPTIONS':
+        response = make_response()
+        return add_cors_headers(response)
+        
     try:
         # Get the analysis from MongoDB
         analysis = MongoDBStorage.get_analysis(analysis_id)
         
         if not analysis:
-            return jsonify({
+            response = jsonify({
                 "success": False,
                 "error": "Analysis not found"
             }), 404
+            return add_cors_headers(response)
         
         # Return the analysis
-        return jsonify({
+        response = jsonify({
             "success": True,
             "analysis": analysis
         })
+        return add_cors_headers(response)
     except Exception as e:
-        return jsonify({
+        response = jsonify({
             "success": False,
             "error": str(e)
         }), 500
+        return add_cors_headers(response)
 
-@analysis_bp.route('/api/saved-analyses/<analysis_id>', methods=['DELETE'])
+@analysis_bp.route('/api/saved-analyses/<analysis_id>', methods=['DELETE', 'OPTIONS'])
 def delete_saved_analysis(analysis_id):
     """
     Delete a specific analysis by ID.
     """
+    # Handle preflight OPTIONS request
+    if request.method == 'OPTIONS':
+        response = make_response()
+        return add_cors_headers(response)
+        
     try:
         # Delete the analysis from MongoDB
         success = MongoDBStorage.delete_analysis(analysis_id)
         
         if not success:
-            return jsonify({
+            response = jsonify({
                 "success": False,
                 "error": "Analysis not found or could not be deleted"
             }), 404
+            return add_cors_headers(response)
         
         # Return success
-        return jsonify({
+        response = jsonify({
             "success": True,
             "message": f"Analysis {analysis_id} deleted successfully"
         })
+        return add_cors_headers(response)
     except Exception as e:
-        return jsonify({
+        response = jsonify({
             "success": False,
             "error": str(e)
         }), 500
+        return add_cors_headers(response)
 
-@analysis_bp.route('/api/save-analysis', methods=['POST'])
+@analysis_bp.route('/api/save-analysis', methods=['POST', 'OPTIONS'])
 def save_new_analysis():
     """
     Save a new analysis.
@@ -131,36 +164,45 @@ def save_new_analysis():
     - analysis_data: The analysis data to save
     - content_name: Name of the content (optional)
     """
+    # Handle preflight OPTIONS request
+    if request.method == 'OPTIONS':
+        response = make_response()
+        return add_cors_headers(response)
+        
     try:
         # Get data from request
         data = request.json
         
         if not data or not isinstance(data, dict):
-            return jsonify({
+            response = jsonify({
                 "success": False,
                 "error": "Invalid request data"
             }), 400
+            return add_cors_headers(response)
         
         analysis_data = data.get('analysis_data')
         content_name = data.get('content_name', 'Untitled Analysis')
         
         if not analysis_data:
-            return jsonify({
+            response = jsonify({
                 "success": False,
                 "error": "Missing analysis_data"
             }), 400
+            return add_cors_headers(response)
         
         # Save the analysis to MongoDB
         analysis_id = MongoDBStorage.save_analysis(analysis_data, content_name)
         
         # Return success and the new analysis ID
-        return jsonify({
+        response = jsonify({
             "success": True,
             "analysis_id": analysis_id,
             "message": "Analysis saved successfully"
         })
+        return add_cors_headers(response)
     except Exception as e:
-        return jsonify({
+        response = jsonify({
             "success": False,
             "error": str(e)
-        }), 500 
+        }), 500
+        return add_cors_headers(response) 

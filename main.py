@@ -23,8 +23,22 @@ import atexit
 import pymongo
 
 app = Flask(__name__)
+
+# Create an after_request handler to ensure CORS headers are properly set
+@app.after_request
+def after_request(response):
+    response.headers.add('Access-Control-Allow-Origin', 'https://branded-contentai.vercel.app')
+    response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
+    response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
+    response.headers.add('Access-Control-Allow-Credentials', 'true')
+    return response
+    
 # Update CORS configuration to allow requests from your Vercel frontend
-CORS(app, resources={r"/*": {"origins": ["https://branded-contentai.vercel.app", "http://localhost:3000"]}})
+CORS(app, resources={r"/*": {
+    "origins": ["https://branded-contentai.vercel.app", "http://localhost:3000"],
+    "supports_credentials": True
+}})
+
 processor = DashboardProcessor()
 
 # Add a root route for the homepage
