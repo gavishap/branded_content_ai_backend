@@ -23,7 +23,7 @@ import atexit
 import pymongo
 
 app = Flask(__name__)
-
+#comment out the CORS middleware to avoid duplicate headers
 # Create an after_request handler to ensure CORS headers are properly set
 @app.after_request
 def after_request(response):
