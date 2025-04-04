@@ -167,22 +167,139 @@ def analyze_video_multi_model(video_url: str, sample_ms: int = 1000) -> Dict[str
     return all_insights
 
 def download_video_with_ytdlp(url: str, output_path: str = "temp_video.mp4") -> str:
+    """Download a video using yt-dlp with improved error handling for YouTube CAPTCHA issues."""
+    if not output_path:
+        # Generate a filename based on the URL
+        output_path = f"temp_video_{os.path.basename(url).split('?')[0]}.mp4"
+    
+    print(f"Downloading video from: {url}")
+    
+    # Enhanced yt-dlp options to bypass YouTube restrictions
+    ydl_opts = {
+        'format': 'mp4',
+        'outtmpl': output_path,
+        'quiet': False,
+        'no_warnings': False,
+        # Add these options to help bypass CAPTCHA issues
+        'geo_bypass': True,
+        'geo_bypass_country': 'US',
+        'skip_download': False,
+        'noplaylist': True,
+        # Use a random user agent to help avoid bot detection
+        'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+        # Retry mechanism for temporary failures
+        'retries': 10,
+        'fragment_retries': 10,
+        'file_access_retries': 5,
+        'retry_sleep_functions': {
+            'http': lambda x: 5 * (2 ** (x - 1)),
+            'fragment': lambda x: 5 * (2 ** (x - 1)),
+            'file_access': lambda x: 5,
+        }
+    }
+    
+    # Attempt to download with increasing levels of fallback
     try:
-        print(f"Downloading video from: {url}")
+        # First attempt - standard download
         command = ["yt-dlp", "-f", "mp4", "-o", output_path, url]
         subprocess.run(command, check=True, capture_output=True, text=True)
         if os.path.exists(output_path):
-            print(f"Downloaded to: {output_path}")
+            print(f"Successfully downloaded video to {output_path}")
             return output_path
         else:
             result = subprocess.run(command, check=False, capture_output=True, text=True)
             print(f"yt-dlp stderr: {result.stderr}")
             raise Exception("Download failed: file not found post-execution.")
     except subprocess.CalledProcessError as e:
-         print(f"yt-dlp Error Output: {e.stderr}")
-         raise Exception(f"Video download failed (yt-dlp error): {e}")
+        print(f"Initial download attempt failed: {e.stderr if hasattr(e, 'stderr') else str(e)}")
+        print("Trying alternative download methods...")
+        
+        try:
+            # Second attempt - use YouTube embedded player URL which sometimes bypasses restrictions
+            if 'youtube.com' in url or 'youtu.be' in url:
+                # Extract video ID
+                if 'youtube.com' in url:
+                    video_id = url.split('v=')[-1].split('&')[0]
+                elif 'youtu.be' in url:
+                    video_id = url.split('/')[-1].split('?')[0]
+                elif 'shorts' in url:
+                    video_id = url.split('/')[-1].split('?')[0]
+                else:
+                    video_id = None
+                
+                if video_id:
+                    # Try embedded player URL
+                    embedded_url = f"https://www.youtube.com/embed/{video_id}"
+                    print(f"Trying embedded URL: {embedded_url}")
+                    try:
+                        subprocess.run(['yt-dlp', '-f', 'mp4', '-o', output_path, embedded_url], check=True, capture_output=True, text=True)
+                        if os.path.exists(output_path):
+                            print(f"Successfully downloaded video using embedded URL to {output_path}")
+                            return output_path
+                    except subprocess.CalledProcessError as embed_error:
+                        print(f"Embedded URL download failed: {embed_error.stderr if hasattr(embed_error, 'stderr') else str(embed_error)}")
+            
+            # Third attempt - use full ydl_opts with python interface
+            try:
+                print("Trying with extended options...")
+                import yt_dlp
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    ydl.download([url])
+                
+                if os.path.exists(output_path):
+                    print(f"Successfully downloaded video with extended options to {output_path}")
+                    return output_path
+                    
+                print("Download completed but file not found")
+            except Exception as ydl_error:
+                print(f"Extended options download failed: {ydl_error}")
+            
+            # Final attempt - try to find a public non-YouTube proxy or alternative
+            if 'youtube.com' in url or 'youtu.be' in url:
+                try:
+                    # Convert YouTube URL to a format that might work with a proxy service
+                    if 'youtube.com' in url:
+                        video_id = url.split('v=')[-1].split('&')[0]
+                    elif 'youtu.be' in url:
+                        video_id = url.split('/')[-1].split('?')[0]
+                    elif 'shorts' in url:
+                        video_id = url.split('/')[-1].split('?')[0]
+                    else:
+                        raise Exception("Could not extract YouTube video ID")
+                    
+                    # Try using a proxy service (Invidious instance)
+                    proxy_url = f"https://vid.puffyan.us/watch?v={video_id}"
+                    print(f"Trying proxy URL: {proxy_url}")
+                    subprocess.run(['yt-dlp', '-f', 'mp4', '-o', output_path, proxy_url], check=True, capture_output=True, text=True)
+                    
+                    if os.path.exists(output_path):
+                        print(f"Successfully downloaded video via proxy to {output_path}")
+                        return output_path
+                except Exception as proxy_error:
+                    print(f"Proxy download attempt failed: {proxy_error}")
+            
+            # If everything fails but we're analyzing a YouTube video,
+            # return an error with specific instructions about CAPTCHA restrictions
+            if 'youtube.com' in url or 'youtu.be' in url:
+                raise Exception(
+                    "YouTube CAPTCHA restriction detected. This video requires human verification. "
+                    "Consider using another video source that doesn't require CAPTCHA verification."
+                )
+            else:
+                # For other sources
+                raise Exception(f"Video download failed after multiple attempts: {e}")
+                
+        except Exception as inner_e:
+            print(f"All download attempts failed: {inner_e}")
+            raise Exception(f"Video download failed: {str(inner_e)}")
     except Exception as e:
         raise Exception(f"Video download failed: {str(e)}")
+    
+    # Should not reach here if all is well
+    if os.path.exists(output_path):
+        return output_path
+    else:
+        raise Exception("Download failed: file not found after all download attempts.")
 
 # --- Main Execution ---
 if __name__ == "__main__":

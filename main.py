@@ -21,6 +21,7 @@ from api_routes import analysis_bp
 import traceback
 import atexit
 import pymongo
+import subprocess
 
 app = Flask(__name__)
 #comment out the CORS middleware to avoid duplicate headers
@@ -436,8 +437,48 @@ def process_unified_analysis_url(analysis_id, video_url, update_progress_callbac
         def progress_callback(stage, progress_pct):
             update_progress_callback(stage, progress_pct)
         
+        # Add user-friendly YouTube check before proceeding
+        if 'youtube.com' in video_url or 'youtu.be' in video_url:
+            print("YouTube URL detected - attempting analysis with potential CAPTCHA handling...")
+        
         # Run the unified analysis with progress callback
-        unified_result = analyze_video_unified(video_url, progress_callback)
+        try:
+            unified_result = analyze_video_unified(video_url, progress_callback)
+        except Exception as analysis_error:
+            print(f"Error in analyze_video_unified: {analysis_error}")
+            
+            # Check for YouTube CAPTCHA errors specifically
+            if "CAPTCHA" in str(analysis_error) or "verification" in str(analysis_error):
+                # Update our progress indicator
+                update_progress_callback("captcha_error", 50)
+                
+                # Create a user-friendly error message
+                captcha_error = {
+                    "error": "YouTube CAPTCHA Error",
+                    "message": (
+                        "The video could not be analyzed because YouTube is requiring CAPTCHA verification. "
+                        "Please try another video source or upload a video file directly instead of using a YouTube URL."
+                    ),
+                    "metadata": {
+                        "url": video_url,
+                        "timestamp": datetime.now().isoformat()
+                    }
+                }
+                
+                # Update progress to error with the error message
+                if analysis_id in analysis_progress:
+                    analysis_progress[analysis_id]["status"] = "error"
+                    analysis_progress[analysis_id]["result"] = captcha_error
+                
+                update_progress_callback("error", 0)
+                
+                raise Exception(
+                    "YouTube CAPTCHA restriction detected. This video requires human verification. "
+                    "Try another video source or upload a video file directly."
+                )
+            
+            # Re-raise the original error if not CAPTCHA related
+            raise
         
         # Update progress
         update_progress_callback("finalizing", 90)
@@ -456,7 +497,13 @@ def process_unified_analysis_url(analysis_id, video_url, update_progress_callbac
         
         # Save the analysis to MongoDB
         content_name = video_url.split('/')[-1] if '/' in video_url else video_url
-        MongoDBStorage.save_analysis(result_with_metadata, content_name, analysis_id)
+        mongo_storage = MongoDBStorage()
+        
+        # Make sure result_with_metadata has all required fields
+        result_with_metadata["analysis_id"] = analysis_id
+        result_with_metadata["content_name"] = content_name
+        
+        mongo_storage.save_analysis(result_with_metadata)
         
         # Add to analyses list
         analyses.append({
@@ -477,7 +524,20 @@ def process_unified_analysis_url(analysis_id, video_url, update_progress_callbac
         
     except Exception as e:
         print(f"Error processing URL analysis: {e}")
+        
+        # Set error status in progress tracker
         update_progress_callback("error", 0)
+        
+        # Add a helpful error message to the analysis progress
+        if analysis_id in analysis_progress:
+            error_result = {
+                "error": str(e),
+                "message": "Analysis failed. Please check the server logs for details.",
+                "timestamp": datetime.now().isoformat(),
+                "url": video_url
+            }
+            
+            analysis_progress[analysis_id]["result"] = error_result
         
         # Clean up temp file on error
         local_path = f"temp_video_{analysis_id}.mp4"
@@ -545,7 +605,14 @@ def process_unified_analysis_file(analysis_id, file_path, filename, update_progr
         }
         
         # Save the analysis to MongoDB
-        MongoDBStorage.save_analysis(result_with_metadata, filename, analysis_id)
+        content_name = filename
+        mongo_storage = MongoDBStorage()
+        
+        # Make sure result_with_metadata has all required fields
+        result_with_metadata["analysis_id"] = analysis_id
+        result_with_metadata["content_name"] = content_name
+        
+        mongo_storage.save_analysis(result_with_metadata)
         
         # Add to analyses list
         analyses.append({
@@ -751,6 +818,114 @@ def shutdown_mongodb():
 
 # Register the shutdown function to run at exit
 atexit.register(shutdown_mongodb)
+
+def download_video_with_ytdlp(video_url, output_path=None):
+    """Download a video using yt-dlp with improved error handling for YouTube CAPTCHA issues."""
+    if not output_path:
+        # Generate a filename based on the URL
+        output_path = f"temp_video_{os.path.basename(video_url).split('?')[0]}.mp4"
+    
+    print(f"Downloading video from: {video_url}")
+    
+    # Enhanced yt-dlp options to bypass YouTube restrictions
+    ydl_opts = {
+        'format': 'mp4',
+        'outtmpl': output_path,
+        'quiet': False,
+        'no_warnings': False,
+        # Add these options to help bypass CAPTCHA issues
+        'geo_bypass': True,
+        'geo_bypass_country': 'US',
+        'skip_download': False,
+        'noplaylist': True,
+        # Use a random user agent to help avoid bot detection
+        'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+        # Retry mechanism for temporary failures
+        'retries': 10,
+        'fragment_retries': 10,
+        'file_access_retries': 5,
+        'retry_sleep_functions': {
+            'http': lambda x: 5 * (2 ** (x - 1)),
+            'fragment': lambda x: 5 * (2 ** (x - 1)),
+            'file_access': lambda x: 5,
+        }
+    }
+    
+    # Attempt to download with increasing levels of fallback
+    try:
+        # First attempt - standard download
+        subprocess.run(['yt-dlp', '-f', 'mp4', '-o', output_path, video_url], check=True)
+        print(f"Successfully downloaded video to {output_path}")
+        return output_path
+    except subprocess.CalledProcessError as e:
+        print(f"Initial download attempt failed: {e}")
+        print("Trying alternative download methods...")
+        
+        try:
+            # Second attempt - use YouTube embedded player URL which sometimes bypasses restrictions
+            if 'youtube.com' in video_url or 'youtu.be' in video_url:
+                # Extract video ID
+                if 'youtube.com' in video_url:
+                    video_id = video_url.split('v=')[-1].split('&')[0]
+                elif 'youtu.be' in video_url:
+                    video_id = video_url.split('/')[-1].split('?')[0]
+                elif 'shorts' in video_url:
+                    video_id = video_url.split('/')[-1].split('?')[0]
+                else:
+                    video_id = None
+                
+                if video_id:
+                    # Try embedded player URL
+                    embedded_url = f"https://www.youtube.com/embed/{video_id}"
+                    print(f"Trying embedded URL: {embedded_url}")
+                    subprocess.run(['yt-dlp', '-f', 'mp4', '-o', output_path, embedded_url], check=True)
+                    print(f"Successfully downloaded video using embedded URL to {output_path}")
+                    return output_path
+            
+            # Third attempt - use full ydl_opts with python interface
+            print("Trying with extended options...")
+            import yt_dlp
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                ydl.download([video_url])
+            
+            if os.path.exists(output_path):
+                print(f"Successfully downloaded video with extended options to {output_path}")
+                return output_path
+                
+            raise Exception("Download completed but file not found")
+            
+        except Exception as inner_e:
+            print(f"All download attempts failed: {inner_e}")
+            
+            # Final attempt - try to find a public non-YouTube proxy or alternative
+            if 'youtube.com' in video_url or 'youtu.be' in video_url:
+                try:
+                    # Convert YouTube URL to a format that might work with a proxy service
+                    if 'youtube.com' in video_url:
+                        video_id = video_url.split('v=')[-1].split('&')[0]
+                    elif 'youtu.be' in video_url:
+                        video_id = video_url.split('/')[-1].split('?')[0]
+                    elif 'shorts' in video_url:
+                        video_id = video_url.split('/')[-1].split('?')[0]
+                    else:
+                        raise Exception("Could not extract YouTube video ID")
+                    
+                    # Try using a proxy service
+                    proxy_url = f"https://vid.puffyan.us/watch?v={video_id}"
+                    print(f"Trying proxy URL: {proxy_url}")
+                    subprocess.run(['yt-dlp', '-f', 'mp4', '-o', output_path, proxy_url], check=True)
+                    
+                    if os.path.exists(output_path):
+                        print(f"Successfully downloaded video via proxy to {output_path}")
+                        return output_path
+                except Exception as proxy_error:
+                    print(f"Proxy download attempt failed: {proxy_error}")
+            
+            # If all download attempts fail, raise the original error
+            raise Exception(f"Video download failed after multiple attempts: {inner_e}")
+            
+    # Return the path to the downloaded file
+    return output_path
 
 if __name__ == '__main__':
     # For local development, use:
