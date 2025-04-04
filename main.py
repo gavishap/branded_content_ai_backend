@@ -27,10 +27,19 @@ app = Flask(__name__)
 # Create an after_request handler to ensure CORS headers are properly set
 @app.after_request
 def after_request(response):
-    response.headers.set('Access-Control-Allow-Origin', 'https://branded-content-ai.vercel.app')
-    response.headers.set('Access-Control-Allow-Headers', 'Content-Type,Authorization')
-    response.headers.set('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
-    response.headers.set('Access-Control-Allow-Credentials', 'true')
+    # Get the origin from the request headers
+    origin = request.headers.get('Origin', '')
+    
+    # List of allowed origins
+    allowed_origins = ['https://branded-content-ai.vercel.app', 'http://localhost:3000']
+    
+    # Check if the request origin is in our list of allowed origins
+    if origin in allowed_origins:
+        response.headers.set('Access-Control-Allow-Origin', origin)
+        response.headers.set('Access-Control-Allow-Headers', 'Content-Type,Authorization')
+        response.headers.set('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
+        response.headers.set('Access-Control-Allow-Credentials', 'true')
+    
     return response
     
 # Comment out the CORS middleware to avoid duplicate headers

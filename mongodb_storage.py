@@ -50,34 +50,46 @@ class MongoDBStorage:
         # Initialize client if not already initialized
         if cls._client is None:
             try:
-                # Add SSL parameters to URI if they're not already present
-                uri = MONGODB_URI
-                if '?' in uri:
-                    if 'tlsAllowInvalidCertificates=true' not in uri:
-                        uri += '&tlsAllowInvalidCertificates=true'
-                else:
-                    uri += '?tlsAllowInvalidCertificates=true'
-                    
-                print(f"Connecting to MongoDB with modified URI")
+                # Detect environment - check if we're running locally or in production (Heroku)
+                is_production = bool(os.environ.get('DYNO'))  # 'DYNO' env var exists in Heroku
                 
-                # When deployed on Heroku, we need to allow invalid certs
-                # But we can't use ssl_cert_reqs as it's not supported in this version
-                cls._client = MongoClient(
-                    uri, 
-                    serverSelectionTimeoutMS=server_selection_timeout_ms,
-                    connectTimeoutMS=connect_timeout_ms,
-                    socketTimeoutMS=socket_timeout_ms,
-                    ssl=True
-                    # Remove the ssl_cert_reqs parameter as it's not supported
-                    # ssl_cert_reqs=False  # Don't verify SSL certificate
-                )
+                # Prepare connection options
+                connection_options = {
+                    'serverSelectionTimeoutMS': server_selection_timeout_ms,
+                    'connectTimeoutMS': connect_timeout_ms,
+                    'socketTimeoutMS': socket_timeout_ms,
+                }
+                
+                # Add SSL parameters to URI if they're not already present and we're in production
+                uri = MONGODB_URI
+                
+                if is_production:
+                    print(f"Running in production environment (Heroku)")
+                    # In production, we need to handle SSL appropriately
+                    if '?' in uri and 'tlsAllowInvalidCertificates=true' not in uri:
+                        uri += '&tlsAllowInvalidCertificates=true'
+                    elif '?' not in uri:
+                        uri += '?tlsAllowInvalidCertificates=true'
+                    
+                    # Add SSL options only for production
+                    connection_options['ssl'] = True
+                    print(f"Using SSL for MongoDB connection")
+                else:
+                    print(f"Running in local development environment")
+                
+                # Connect with appropriate options
+                print(f"Connecting to MongoDB...")
+                cls._client = MongoClient(uri, **connection_options)
                 
                 # Test connection
                 try:
-                    cls._client.admin.command('ping')
-                    print("MongoDB connection successful")
+                    info = cls._client.server_info()
+                    print(f"MongoDB connection successful. Server version: {info.get('version', 'unknown')}")
                 except Exception as e:
-                    print(f"Warning: Ping test failed, but continuing: {e}")
+                    print(f"Warning: Server info test failed, but continuing: {e}")
+                    # Try a simpler test
+                    cls._client.admin.command('ping')
+                    print("MongoDB ping successful")
                     
             except Exception as e:
                 print(f"Error initializing MongoDB client: {e}", file=sys.stderr)
