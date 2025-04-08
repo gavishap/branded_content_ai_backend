@@ -81,6 +81,7 @@ def generate_structured_output(raw_analysis: str, metadata: Dict[str, Any]) -> D
         3. Do not include any explanations
         4. Ensure all JSON syntax is correct
         5. Use the exact structure provided below
+        6. ALWAYS use numerical values for demographic data (not text like "high" or "medium")
 
         JSON Structure:
         {
@@ -110,6 +111,25 @@ def generate_structured_output(raw_analysis: str, metadata: Dict[str, Any]) -> D
         Analysis to convert:
             {raw_analysis}
 
+        IMPORTANT: For all demographic distribution values, use only numerical data (percentages). For example:
+        "demographics": {
+            "age_distribution": {
+                "20-29": 60.3,
+                "30-39": 47.0
+            },
+            "gender_distribution": {
+                "male": 57.7,
+                "female": 42.3
+            },
+            "ethnicity_distribution": {
+                "Southeast Asian": 45.0,
+                "Black": 30.8,
+                "Middle Eastern": 15.0,
+                "White": 5.0,
+                "Hispanic/Latino": 4.2
+            }
+        }
+        
         Remember: Return ONLY the JSON object, no other text."""
 
         print("Generating content from model...")
@@ -217,6 +237,75 @@ def save_structured_analysis(structured_data: Dict[str, Any]) -> str:
         print(f"Error saving structured analysis: {e}")
         raise
 
+def validate_demographic_data(structured_data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Validate and fix demographic data to ensure all values are numerical.
+    
+    Args:
+        structured_data: The structured analysis data
+        
+    Returns:
+        Dict with validated/fixed demographic data
+    """
+    if not structured_data or "demographics" not in structured_data:
+        print("No demographics data found to validate")
+        return structured_data
+    
+    demographics = structured_data["demographics"]
+    distributions = ["age_distribution", "gender_distribution", "ethnicity_distribution"]
+    
+    text_value_mappings = {
+        "high": 80.0,
+        "majority": 75.0,
+        "predominant": 85.0,
+        "strong": 70.0,
+        "substantial": 65.0,
+        "notable": 50.0,
+        "medium": 50.0,
+        "moderate": 40.0,
+        "some": 30.0,
+        "present": 25.0,
+        "low": 20.0,
+        "minimal": 10.0,
+        "trace": 5.0
+    }
+    
+    for dist_key in distributions:
+        if dist_key in demographics:
+            distribution = demographics[dist_key]
+            
+            # Skip if already empty
+            if not distribution:
+                continue
+                
+            fixed_distribution = {}
+            for demo_key, value in distribution.items():
+                # If value is a string but not a number string, convert it
+                if isinstance(value, str):
+                    if value.replace('.', '', 1).isdigit():
+                        # It's a numeric string, convert to float
+                        fixed_distribution[demo_key] = float(value)
+                    else:
+                        # It's a text value, map it to a number
+                        lowercase_value = value.lower().strip()
+                        if lowercase_value in text_value_mappings:
+                            fixed_distribution[demo_key] = text_value_mappings[lowercase_value]
+                        else:
+                            # Default value if no mapping found
+                            print(f"Warning: Converting unmapped text value '{value}' to default value 50.0")
+                            fixed_distribution[demo_key] = 50.0
+                else:
+                    # Already a number, keep as is
+                    fixed_distribution[demo_key] = float(value) if isinstance(value, (int, float)) else 50.0
+            
+            # Replace with fixed distribution
+            demographics[dist_key] = fixed_distribution
+    
+    # Update the structured data with fixed demographics
+    structured_data["demographics"] = demographics
+    print("Demographics data validated and fixed if needed")
+    return structured_data
+
 def process_analysis(raw_analysis_result: Dict[str, Any]) -> Dict[str, Any]:
     """Main function to process the raw analysis into structured data."""
     try:
@@ -229,6 +318,9 @@ def process_analysis(raw_analysis_result: Dict[str, Any]) -> Dict[str, Any]:
             raw_analysis_result["raw_analysis"],
             raw_analysis_result["metadata"]
         )
+        
+        # Validate and fix demographic data
+        structured_data = validate_demographic_data(structured_data)
         
         # Save the structured analysis
         save_structured_analysis(structured_data)

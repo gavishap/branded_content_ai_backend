@@ -1,4 +1,3 @@
-
 ### ✅ FINAL LLM PROMPT (ready to plug into your code)
 
 ---
@@ -37,6 +36,26 @@ Summarize what the video depicts based on the concept and object frequencies. Wh
 
 ## Demographic Representation  
 Analyze the gender, age, and ethnicity distribution. Is the cast diverse or homogenous? Which groups dominate screen time? Comment on representation quality (e.g., inclusive, skewed, targeted). Explain how this may influence audience connection and perception.
+
+⚠️ **CRITICAL REQUIREMENT: ALL demographic distribution values MUST be numeric percentages, not text descriptions.**
+
+✅ CORRECT:
+```
+"age_distribution": {
+  "20-29": 60.3,
+  "30-39": 47.0
+}
+```
+
+❌ INCORRECT:
+```
+"age_distribution": {
+  "20-29": "high",
+  "30-39": "moderate"
+}
+```
+
+Your demographic data will be used to generate charts and visualizations, so text values like "high", "moderate", "predominant", etc. will cause errors in the system. Always convert these observations to numerical percentages.
 
 ---
 
@@ -154,10 +173,10 @@ Edit
 the output needs to be in a structured manner because im going to be sending this to a frontend and before that im going to need to validate it
 
 ### IMPORTANT NOTE ON DATA FORMAT:
-For demographic data in the representation_metrics section, ensure all values are numerical:
+For demographic data in the demographics section, ALL VALUES MUST BE NUMERICAL. This is a critical requirement for the dashboard functionality.
 
 ```json
-"demographics_breakdown": {
+"demographics": {
   "age_distribution": {
     "20-29": 60.3,
     "30-39": 47.0
@@ -176,4 +195,4 @@ For demographic data in the representation_metrics section, ensure all values ar
 }
 ```
 
-Do not use descriptive terms like "high", "moderate", "prominent" for these values. Always use numerical percentages that can be directly rendered in charts.
+⚠️ FINAL WARNING: Do not use descriptive terms like "high", "moderate", "prominent" for these values. Always use numerical percentages that can be directly rendered in charts. If you're uncertain about exact percentages, make your best estimate based on the input data.

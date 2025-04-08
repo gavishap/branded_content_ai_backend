@@ -11,7 +11,7 @@ import re
 
 # Import necessary modules for both analysis pipelines
 from inference_layer import analyze_video_output
-from structured_analysis import process_analysis
+from structured_analysis import process_analysis, validate_demographic_data
 from clarif_ai_insights import analyze_video_multi_model, download_video_with_ytdlp, upload_to_s3, S3_BUCKET_NAME
 
 # Load environment variables
@@ -616,7 +616,10 @@ def validate_unified_analysis(unified_analysis: Dict[str, Any],
     Validate the unified analysis with a second LLM pass to ensure quality and completeness.
     """
     try:
-        # First, let's verify the JSON structure of the unified_analysis
+        # First, let's check for and fix any non-numeric demographic data
+        unified_analysis = validate_demographic_data_in_unified(unified_analysis)
+        
+        # Then, let's verify the JSON structure of the unified_analysis
         # Convert to string and back to ensure it's valid JSON
         unified_json_str = json.dumps(unified_analysis)
         unified_analysis = json.loads(unified_json_str)
@@ -683,6 +686,94 @@ Response Instructions:
         print(f"Error in validation: {e}")
         # If validation fails, return the original unified analysis
         return unified_analysis
+
+def validate_demographic_data_in_unified(unified_analysis: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Validate and fix demographic data in unified analysis to ensure all values are numerical.
+    This function is similar to validate_demographic_data in structured_analysis.py but adapted
+    for the unified analysis structure.
+    
+    Args:
+        unified_analysis: The unified analysis data
+        
+    Returns:
+        Dict with validated/fixed demographic data
+    """
+    print("Validating demographic data in unified analysis...")
+    
+    # Handle different structures that might contain demographic data
+    if "representation_metrics" in unified_analysis and "demographics_breakdown" in unified_analysis["representation_metrics"]:
+        demographics = unified_analysis["representation_metrics"]["demographics_breakdown"]
+        distributions = ["age_distribution", "gender_distribution", "ethnicity_distribution"]
+    elif "clarifai_analysis" in unified_analysis and "demographics" in unified_analysis["clarifai_analysis"]:
+        demographics = unified_analysis["clarifai_analysis"]["demographics"]
+        distributions = ["age_distribution", "gender_distribution", "ethnicity_distribution"]
+    elif "demographics" in unified_analysis:
+        demographics = unified_analysis["demographics"]
+        distributions = ["age_distribution", "gender_distribution", "ethnicity_distribution"]
+    else:
+        print("No demographics data found to validate in unified analysis")
+        return unified_analysis
+    
+    text_value_mappings = {
+        "high": 80.0,
+        "majority": 75.0,
+        "predominant": 85.0,
+        "strong": 70.0,
+        "substantially": 65.0,
+        "substantial": 65.0,
+        "notable": 50.0,
+        "medium": 50.0,
+        "moderate": 40.0,
+        "some": 30.0,
+        "present": 25.0,
+        "low": 20.0,
+        "minimal": 10.0,
+        "trace": 5.0,
+        "strongly skewed towards": 90.0
+    }
+    
+    for dist_key in distributions:
+        if dist_key in demographics:
+            distribution = demographics[dist_key]
+            
+            # Skip if already empty
+            if not distribution:
+                continue
+                
+            fixed_distribution = {}
+            for demo_key, value in distribution.items():
+                # If value is a string but not a number string, convert it
+                if isinstance(value, str):
+                    if value.replace('.', '', 1).isdigit():
+                        # It's a numeric string, convert to float
+                        fixed_distribution[demo_key] = float(value)
+                    else:
+                        # It's a text value, map it to a number
+                        lowercase_value = value.lower().strip()
+                        if lowercase_value in text_value_mappings:
+                            fixed_distribution[demo_key] = text_value_mappings[lowercase_value]
+                        else:
+                            # Default value if no mapping found
+                            print(f"Warning: Converting unmapped text value '{value}' to default value 50.0")
+                            fixed_distribution[demo_key] = 50.0
+                else:
+                    # Already a number, keep as is
+                    fixed_distribution[demo_key] = float(value) if isinstance(value, (int, float)) else 50.0
+            
+            # Replace with fixed distribution
+            demographics[dist_key] = fixed_distribution
+    
+    # Update the unified_analysis with fixed demographics data
+    if "representation_metrics" in unified_analysis and "demographics_breakdown" in unified_analysis["representation_metrics"]:
+        unified_analysis["representation_metrics"]["demographics_breakdown"] = demographics
+    elif "clarifai_analysis" in unified_analysis and "demographics" in unified_analysis["clarifai_analysis"]:
+        unified_analysis["clarifai_analysis"]["demographics"] = demographics
+    elif "demographics" in unified_analysis:
+        unified_analysis["demographics"] = demographics
+    
+    print("Demographics data in unified analysis validated and fixed if needed")
+    return unified_analysis
 
 def fallback_merge(gemini_analysis: Dict[str, Any], clarifai_analysis: Dict[str, Any]) -> Dict[str, Any]:
     """
@@ -795,6 +886,9 @@ def analyze_video(video_url_or_path: str, progress_callback=None) -> Dict[str, A
             
         # Combine the analyses
         unified_analysis = combine_analyses(gemini_analysis, clarifai_analysis)
+        
+        # Validate demographic data before full validation
+        unified_analysis = validate_demographic_data_in_unified(unified_analysis)
         
         # Notify start of validation
         if progress_callback:
