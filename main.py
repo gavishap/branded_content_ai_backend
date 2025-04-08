@@ -172,10 +172,88 @@ def analyze_file():
 
 @app.route('/api/analysis/<analysis_id>', methods=['GET'])
 def get_analysis(analysis_id):
+    """
+    Get analysis data by ID, with consistent structure for frontend consumption.
+    Returns the analysis dashboard data in a format the frontend expects.
+    """
+    # First check in-memory analyses
     for analysis in analyses:
         if analysis["metadata"]["id"] == analysis_id:
-            return jsonify(analysis["dashboard_data"])
-    return jsonify({"error": "Analysis not found"}), 404
+            print(f"Found analysis {analysis_id} in memory")
+            
+            # If it has analysis_data, return that
+            if "analysis_data" in analysis:
+                print(f"Returning analysis_data from memory")
+                return jsonify(analysis["analysis_data"])
+            
+            # Return dashboard_data if it exists
+            if "dashboard_data" in analysis:
+                print(f"Returning dashboard_data from memory")
+                return jsonify(analysis["dashboard_data"])
+            
+            # If structured_analysis exists but not dashboard_data, return that instead 
+            if "structured_analysis" in analysis:
+                print(f"Returning structured_analysis from memory")
+                return jsonify(analysis["structured_analysis"])
+            
+            # Return the whole analysis as a fallback (excluding raw_analysis if present)
+            print(f"Returning basic analysis data from memory")
+            safe_analysis = {k: v for k, v in analysis.items() if k != "raw_analysis"}
+            return jsonify(safe_analysis)
+            
+    # If not found in memory, try MongoDB storage
+    try:
+        from mongodb_storage import MongoDBStorage
+        stored_analysis = MongoDBStorage.get_analysis(analysis_id)
+        
+        if stored_analysis:
+            print(f"Found analysis {analysis_id} in MongoDB storage")
+            
+            # Check for structured or dashboard data
+            if "analysis_data" in stored_analysis:
+                print(f"Returning analysis_data from MongoDB")
+                return jsonify(stored_analysis["analysis_data"])
+            
+            if "dashboard_data" in stored_analysis:
+                print(f"Returning dashboard_data from MongoDB")
+                return jsonify(stored_analysis["dashboard_data"])
+            
+            if "structured_analysis" in stored_analysis:
+                print(f"Returning structured_analysis from MongoDB")
+                return jsonify(stored_analysis["structured_analysis"])
+            
+            # Clean the stored analysis for return
+            # Convert MongoDB ID to string and remove any sensitive fields
+            stored_analysis_clean = {}
+            for k, v in stored_analysis.items():
+                if k != "_id" and k != "raw_analysis":
+                    stored_analysis_clean[k] = v
+            
+            # Ensure it has at least metadata and a valid structure
+            if "metadata" not in stored_analysis_clean:
+                stored_analysis_clean["metadata"] = {
+                    "id": analysis_id,
+                    "analyzed_date": datetime.now().strftime("%B %d, %Y %H:%M")
+                }
+            
+            print(f"Returning basic analysis data from MongoDB")
+            return jsonify(stored_analysis_clean)
+    except ImportError:
+        print("MongoDB storage module not available")
+    except Exception as e:
+        print(f"Error retrieving analysis from MongoDB: {e}")
+        traceback.print_exc()
+        
+    # If still not found, return error
+    print(f"Analysis {analysis_id} not found in any storage")
+    return jsonify({
+        "error": "Analysis not found",
+        "metadata": {"id": analysis_id},
+        "summary": {
+            "content_overview": "Analysis data not found",
+            "overall_performance_score": 0
+        }
+    }), 404
 
 @app.route('/api/analysis/<analysis_id>', methods=['DELETE'])
 def delete_analysis(analysis_id):
