@@ -274,14 +274,25 @@ def validate_demographic_data(structured_data: Dict[str, Any]) -> Dict[str, Any]
         if dist_key in demographics:
             distribution = demographics[dist_key]
             
-            # Skip if already empty
-            if not distribution:
+            # Skip if already empty or not a dictionary
+            if not isinstance(distribution, dict) or not distribution:
+                # If it's not a dict (e.g., None or a string), replace with empty dict
+                demographics[dist_key] = {}
                 continue
-                
+
             fixed_distribution = {}
+            # Check if the only key is 'needs_validation'
+            if list(distribution.keys()) == ['needs_validation'] and distribution['needs_validation'] is True:
+                 print(f"Warning: Demographic distribution '{dist_key}' contains only 'needs_validation'. Setting to empty.")
+                 demographics[dist_key] = {}
+                 continue
+
             for demo_key, value in distribution.items():
-                # If value is a string but not a number string, convert it
-                if isinstance(value, str):
+                # If value is already a number, ensure it's a float
+                if isinstance(value, (int, float)):
+                    fixed_distribution[demo_key] = float(value)
+                # If value is a string
+                elif isinstance(value, str):
                     if value.replace('.', '', 1).isdigit():
                         # It's a numeric string, convert to float
                         fixed_distribution[demo_key] = float(value)
@@ -291,16 +302,17 @@ def validate_demographic_data(structured_data: Dict[str, Any]) -> Dict[str, Any]
                         if lowercase_value in text_value_mappings:
                             fixed_distribution[demo_key] = text_value_mappings[lowercase_value]
                         else:
-                            # Default value if no mapping found
-                            print(f"Warning: Converting unmapped text value '{value}' to default value 50.0")
-                            fixed_distribution[demo_key] = 50.0
+                            # Default value if no mapping found or unhandled string
+                            print(f"Warning: Converting unmapped/unhandled text value '{value}' in '{dist_key}' to default value 0.0")
+                            fixed_distribution[demo_key] = 0.0
+                # Handle boolean or other unexpected types
                 else:
-                    # Already a number, keep as is
-                    fixed_distribution[demo_key] = float(value) if isinstance(value, (int, float)) else 50.0
-            
+                    print(f"Warning: Converting non-numerical/non-string value '{value}' (type: {type(value)}) in '{dist_key}' to default value 0.0")
+                    fixed_distribution[demo_key] = 0.0
+
             # Replace with fixed distribution
             demographics[dist_key] = fixed_distribution
-    
+
     # Update the structured data with fixed demographics
     structured_data["demographics"] = demographics
     print("Demographics data validated and fixed if needed")
