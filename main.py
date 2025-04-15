@@ -13,14 +13,13 @@ from clarif_ai_insights import (
     upload_to_s3, 
     S3_BUCKET_NAME
 )
+from s3_utils import download_json_from_s3
 from inference_layer import analyze_video_output
 from structured_analysis import process_analysis
 from unified_analysis import analyze_video as analyze_video_unified
-from mongodb_storage import MongoDBStorage
 from api_routes import analysis_bp
 import traceback
 import atexit
-import pymongo
 import subprocess
 
 app = Flask(__name__)
@@ -68,26 +67,13 @@ def index():
 # Register the analysis blueprint
 app.register_blueprint(analysis_bp)
 
-# Initialize MongoDB connection at application startup
-print("Initializing MongoDB connection...")
-try:
-    # Set longer connection timeouts for production environment
-    mongodb_collection = MongoDBStorage.get_collection(
-        server_selection_timeout_ms=5000,  # 5 seconds
-        connect_timeout_ms=5000,
-        socket_timeout_ms=5000
-    )
-    print(f"MongoDB initialized successfully")
-except Exception as e:
-    print(f"Warning: Could not initialize MongoDB connection: {e}")
-    traceback.print_exc()
-
 # In-memory storage for analyses and tracking analysis progress
 analyses = []
 analysis_progress = {}  # Structure: {analysis_id: {progress, step, status, result}}
 
 @app.route('/api/analyses', methods=['GET'])
 def get_analyses():
+    # This might return stale in-memory data, but keep for compatibility if needed
     return jsonify({"analyses": analyses})
 
 @app.route('/api/analyze-url', methods=['POST'])
@@ -146,7 +132,7 @@ def analyze_file():
                 "id": analysis_id
             })
                 
-            # Store the analysis
+            # Store the analysis (in memory - limited use)
             analyses.append({
                 "metadata": {
                     "id": analysis_id,
@@ -173,93 +159,57 @@ def analyze_file():
 @app.route('/api/analysis/<analysis_id>', methods=['GET'])
 def get_analysis(analysis_id):
     """
-    Get analysis data by ID, with consistent structure for frontend consumption.
+    Get analysis data by ID from S3.
     Returns the analysis dashboard data in a format the frontend expects.
     """
-    # First check in-memory analyses
-    for analysis in analyses:
-        if analysis["metadata"]["id"] == analysis_id:
-            print(f"Found analysis {analysis_id} in memory")
-            
-            # If it has analysis_data, return that
-            if "analysis_data" in analysis:
-                print(f"Returning analysis_data from memory")
-                return jsonify(analysis["analysis_data"])
-            
-            # Return dashboard_data if it exists
-            if "dashboard_data" in analysis:
-                print(f"Returning dashboard_data from memory")
-                return jsonify(analysis["dashboard_data"])
-            
-            # If structured_analysis exists but not dashboard_data, return that instead 
-            if "structured_analysis" in analysis:
-                print(f"Returning structured_analysis from memory")
-                return jsonify(analysis["structured_analysis"])
-            
-            # Return the whole analysis as a fallback (excluding raw_analysis if present)
-            print(f"Returning basic analysis data from memory")
-            safe_analysis = {k: v for k, v in analysis.items() if k != "raw_analysis"}
-            return jsonify(safe_analysis)
-            
-    # If not found in memory, try MongoDB storage
+    print(f"Attempting to retrieve analysis {analysis_id} from S3")
+    s3_object_key = f"analysis-results/{analysis_id}.json"
+
     try:
-        from mongodb_storage import MongoDBStorage
-        stored_analysis = MongoDBStorage.get_analysis(analysis_id)
-        
-        if stored_analysis:
-            print(f"Found analysis {analysis_id} in MongoDB storage")
-            
-            # Check for structured or dashboard data
-            if "analysis_data" in stored_analysis:
-                print(f"Returning analysis_data from MongoDB")
-                return jsonify(stored_analysis["analysis_data"])
-            
-            if "dashboard_data" in stored_analysis:
-                print(f"Returning dashboard_data from MongoDB")
-                return jsonify(stored_analysis["dashboard_data"])
-            
-            if "structured_analysis" in stored_analysis:
-                print(f"Returning structured_analysis from MongoDB")
-                return jsonify(stored_analysis["structured_analysis"])
-            
-            # Clean the stored analysis for return
-            # Convert MongoDB ID to string and remove any sensitive fields
-            stored_analysis_clean = {}
-            for k, v in stored_analysis.items():
-                if k != "_id" and k != "raw_analysis":
-                    stored_analysis_clean[k] = v
-            
-            # Ensure it has at least metadata and a valid structure
-            if "metadata" not in stored_analysis_clean:
-                stored_analysis_clean["metadata"] = {
-                    "id": analysis_id,
-                    "analyzed_date": datetime.now().strftime("%B %d, %Y %H:%M")
-                }
-            
-            print(f"Returning basic analysis data from MongoDB")
-            return jsonify(stored_analysis_clean)
-    except ImportError:
-        print("MongoDB storage module not available")
+        analysis_data = download_json_from_s3(S3_BUCKET_NAME, s3_object_key)
+
+        if analysis_data:
+            print(f"Successfully retrieved analysis {analysis_id} from S3")
+            # The data from S3 should already be in the correct format
+            return jsonify(analysis_data), 200
+        else:
+            # If not found in S3, check for an error file as a fallback
+            print(f"Analysis {analysis_id} not found in S3. Checking for error file.")
+            s3_error_key = f"analysis-results/{analysis_id}_error.json"
+            error_data = download_json_from_s3(S3_BUCKET_NAME, s3_error_key)
+            if error_data:
+                 print(f"Found error file for analysis {analysis_id} in S3")
+                 # Return the error data, maybe with a different status code if desired?
+                 # For now, return 200 but let frontend handle the error flag within data
+                 return jsonify(error_data), 200
+            else:
+                 # If neither main nor error file found
+                 print(f"Analysis {analysis_id} not found in S3 (neither main nor error file)")
+                 return jsonify({
+                     "error": "Analysis not found",
+                     "metadata": {"id": analysis_id},
+                     "summary": {
+                         "content_overview": "Analysis data not found",
+                         "overall_performance_score": 0
+                     }
+                 }), 404
+
     except Exception as e:
-        print(f"Error retrieving analysis from MongoDB: {e}")
+        # Handle potential errors during S3 download (e.g., credentials, permissions)
+        print(f"Error retrieving analysis {analysis_id} from S3: {e}")
         traceback.print_exc()
-        
-    # If still not found, return error
-    print(f"Analysis {analysis_id} not found in any storage")
-    return jsonify({
-        "error": "Analysis not found",
-        "metadata": {"id": analysis_id},
-        "summary": {
-            "content_overview": "Analysis data not found",
-            "overall_performance_score": 0
-        }
-    }), 404
+        return jsonify({
+            "error": f"Failed to retrieve analysis from storage: {str(e)}",
+            "metadata": {"id": analysis_id}
+        }), 500
 
 @app.route('/api/analysis/<analysis_id>', methods=['DELETE'])
 def delete_analysis(analysis_id):
     global analyses
     initial_count = len(analyses)
     analyses = [a for a in analyses if a["metadata"]["id"] != analysis_id]
+    # TODO: Add deletion from S3 as well
+    print(f"Note: S3 deletion for {analysis_id} not yet implemented.")
     if len(analyses) < initial_count:
         return jsonify({"success": True})
     return jsonify({"error": "Analysis not found"}), 404
@@ -347,7 +297,7 @@ def process_clarifai_video(video_url, video_name):
         structured_result = process_analysis(initial_analysis)
         print("--- Structured Analysis Complete ---")
         
-        # 4. Store analysis results
+        # 4. Store analysis results (in memory - limited use)
         analyses.append({
             "metadata": {
                 "id": analysis_id,
@@ -481,12 +431,47 @@ def analyze_unified():
 def get_analysis_progress(analysis_id):
     """Get the current progress of an ongoing analysis."""
     if analysis_id not in analysis_progress:
-        return jsonify({"error": "Analysis ID not found"}), 404
-        
+        # Before returning 404, check if the result exists in S3
+        print(f"Progress for {analysis_id} not in memory. Checking S3...")
+        s3_object_key = f"analysis-results/{analysis_id}.json"
+        try:
+            analysis_data = download_json_from_s3(S3_BUCKET_NAME, s3_object_key)
+            if analysis_data:
+                print(f"Found completed analysis {analysis_id} in S3 during progress check.")
+                # Update in-memory cache if needed (optional)
+                analysis_progress[analysis_id] = {
+                    "progress": 100,
+                    "step": 12, # Assuming 12 is the completed step
+                    "status": "completed",
+                    "result": analysis_data
+                }
+                return jsonify(analysis_progress[analysis_id])
+            else:
+                # Check for error file
+                s3_error_key = f"analysis-results/{analysis_id}_error.json"
+                error_data = download_json_from_s3(S3_BUCKET_NAME, s3_error_key)
+                if error_data:
+                    print(f"Found error analysis {analysis_id} in S3 during progress check.")
+                    analysis_progress[analysis_id] = {
+                        "progress": 0,
+                        "step": 0,
+                        "status": "error",
+                        "result": error_data
+                    }
+                    return jsonify(analysis_progress[analysis_id])
+                else:
+                    print(f"Analysis {analysis_id} not found in memory or S3.")
+                    return jsonify({"error": "Analysis ID not found or expired"}), 404
+        except Exception as e:
+            print(f"Error checking S3 for analysis {analysis_id} during progress check: {e}")
+            # Fallback to 404 if S3 check fails
+            return jsonify({"error": "Analysis ID not found or error checking status"}), 404
+
     progress_data = analysis_progress[analysis_id]
-    
-    # If analysis is complete, include the result
-    if progress_data["status"] == "completed" and progress_data["result"]:
+
+    # If analysis is complete in memory, include the result (already handled by S3 check?)
+    # Keep this for safety / if S3 check fails but memory has completion
+    if progress_data["status"] == "completed" and progress_data.get("result"):
         return jsonify({
             "analysis_id": analysis_id,
             "progress": progress_data["progress"],
@@ -494,7 +479,16 @@ def get_analysis_progress(analysis_id):
             "status": progress_data["status"],
             "result": progress_data["result"]
         })
-    
+    elif progress_data["status"] == "error" and progress_data.get("result"):
+         return jsonify({
+            "analysis_id": analysis_id,
+            "progress": progress_data["progress"],
+            "step": progress_data["step"],
+            "status": progress_data["status"],
+            "result": progress_data["result"] # Include error details
+        })
+
+    # Default: Return current in-memory progress
     return jsonify({
         "analysis_id": analysis_id,
         "progress": progress_data["progress"],
@@ -504,64 +498,23 @@ def get_analysis_progress(analysis_id):
 
 def process_unified_analysis_url(analysis_id, video_url, update_progress_callback):
     """Process a URL-based analysis in the background and update progress."""
+    local_path = None # Define local_path here for cleanup scope
     try:
         update_progress_callback("initializing", 0)
-        
-        # Use the unified analysis function that runs Gemini and ClarifAI in parallel
         update_progress_callback("downloading_video", 5)
         print(f"Starting unified analysis for video URL: {video_url}")
-        
-        # Track the progress of the analysis
+
         def progress_callback(stage, progress_pct):
             update_progress_callback(stage, progress_pct)
-        
-        # Add user-friendly YouTube check before proceeding
+
         if 'youtube.com' in video_url or 'youtu.be' in video_url:
-            print("YouTube URL detected - attempting analysis with potential CAPTCHA handling...")
-        
-        # Run the unified analysis with progress callback
-        try:
-            unified_result = analyze_video_unified(video_url, progress_callback)
-        except Exception as analysis_error:
-            print(f"Error in analyze_video_unified: {analysis_error}")
-            
-            # Check for YouTube CAPTCHA errors specifically
-            if "CAPTCHA" in str(analysis_error) or "verification" in str(analysis_error):
-                # Update our progress indicator
-                update_progress_callback("captcha_error", 50)
-                
-                # Create a user-friendly error message
-                captcha_error = {
-                    "error": "YouTube CAPTCHA Error",
-                    "message": (
-                        "The video could not be analyzed because YouTube is requiring CAPTCHA verification. "
-                        "Please try another video source or upload a video file directly instead of using a YouTube URL."
-                    ),
-                    "metadata": {
-                        "url": video_url,
-                        "timestamp": datetime.now().isoformat()
-                    }
-                }
-                
-                # Update progress to error with the error message
-                if analysis_id in analysis_progress:
-                    analysis_progress[analysis_id]["status"] = "error"
-                    analysis_progress[analysis_id]["result"] = captcha_error
-                
-                update_progress_callback("error", 0)
-                
-                raise Exception(
-                    "YouTube CAPTCHA restriction detected. This video requires human verification. "
-                    "Try another video source or upload a video file directly."
-                )
-            
-            # Re-raise the original error if not CAPTCHA related
-            raise
-        
-        # Update progress
+            print("YouTube URL detected - attempting analysis...")
+
+        unified_result = analyze_video_unified(video_url, analysis_id, progress_callback)
+
         update_progress_callback("finalizing", 90)
-        
-        # Add metadata
+
+        # Construct final data (includes saving to S3 via analyze_video_unified -> save_unified_analysis)
         result_with_metadata = {
             "metadata": {
                 "id": analysis_id,
@@ -570,324 +523,184 @@ def process_unified_analysis_url(analysis_id, video_url, update_progress_callbac
                 "analysis_sources": ["Gemini", "ClarifAI"],
                 "confidence_index": unified_result.get("metadata", {}).get("confidence_index", 75)
             },
-            **unified_result
+             **(unified_result if isinstance(unified_result, dict) else {})
         }
-        
-        # Save the analysis to MongoDB
-        content_name = video_url.split('/')[-1] if '/' in video_url else video_url
-        mongo_storage = MongoDBStorage()
-        
-        # Make sure result_with_metadata has all required fields
-        result_with_metadata["analysis_id"] = analysis_id
-        result_with_metadata["content_name"] = content_name
-        
-        mongo_storage.save_analysis(result_with_metadata)
-        
-        # Add to analyses list
-        analyses.append({
-            "metadata": {
-                "id": analysis_id,
-                "video_url": video_url,
-                "analyzed_date": datetime.now().strftime("%B %d, %Y %H:%M")
-            },
-            "analysis_data": result_with_metadata
-        })
-        
+        # Ensure ID exists (should be redundant now but safe)
+        if "id" not in result_with_metadata.get("metadata", {}):
+             result_with_metadata["metadata"]["id"] = analysis_id
+        if "analysis_id" not in result_with_metadata:
+             result_with_metadata["analysis_id"] = analysis_id
+        if "content_name" not in result_with_metadata:
+             result_with_metadata["content_name"] = video_url.split('/')[-1] if '/' in video_url else video_url
+
         # Update progress to completed with the result
         if analysis_id in analysis_progress:
-            analysis_progress[analysis_id]["result"] = result_with_metadata
+            analysis_progress[analysis_id]["result"] = result_with_metadata # Store result in memory
         update_progress_callback("completed", 100)
-        
+
         print(f"Unified analysis completed for: {video_url}")
-        
+
     except Exception as e:
         print(f"Error processing URL analysis: {e}")
-        
-        # Set error status in progress tracker
         update_progress_callback("error", 0)
-        
-        # Add a helpful error message to the analysis progress
         if analysis_id in analysis_progress:
             error_result = {
-                "error": str(e),
-                "message": "Analysis failed. Please check the server logs for details.",
-                "timestamp": datetime.now().isoformat(),
-                "url": video_url
+                 "metadata": { "id": analysis_id, "video_url": video_url },
+                 "error": str(e),
+                 "message": "Analysis failed. Please check the server logs for details.",
+                 "timestamp": datetime.now().isoformat()
             }
-            
             analysis_progress[analysis_id]["result"] = error_result
-        
-        # Clean up temp file on error
-        local_path = f"temp_video_{analysis_id}.mp4"
-        if os.path.exists(local_path):
-            os.remove(local_path)
+            analysis_progress[analysis_id]["status"] = "error"
+            # Attempt to save error report to S3
+            try:
+                from unified_analysis import save_unified_analysis # Import locally if needed
+                save_unified_analysis(error_result)
+            except Exception as save_e:
+                print(f"Could not save error analysis report: {save_e}")
+
+    finally:
+         # Clean up temp downloaded file if it exists (check unified_analysis.py for actual path)
+         # This assumes download happens within analyze_video_unified now
+         pass # Add cleanup logic here if needed based on where download occurs
 
 def process_unified_analysis_file(analysis_id, file_path, filename, update_progress_callback):
     """Process a file-based analysis in the background and update progress."""
     try:
         update_progress_callback("initializing", 5)
         print(f"Starting file analysis process for {filename} at {file_path}")
-        
-        # Check if file exists and is accessible
+
         if not os.path.exists(file_path):
             raise FileNotFoundError(f"Temporary file {file_path} not found")
-        
-        # Check file size
-        file_size = os.path.getsize(file_path)
-        print(f"File size: {file_size} bytes")
-        
-        # Use the unified analysis function with the local file path directly
-        # This allows Gemini to use direct file upload instead of URL-based analysis
+
         update_progress_callback("preparing", 15)
         print(f"Starting unified analysis for video file: {filename}")
-        
-        # Track the progress of the analysis
+
         def progress_callback(stage, progress_pct):
             update_progress_callback(stage, progress_pct)
             print(f"Analysis progress: {stage} - {progress_pct}%")
-        
-        # Run the unified analysis with progress callback using the local file path
-        # S3 upload will happen inside the analysis pipeline only for ClarifAI
-        unified_result = analyze_video_unified(file_path, progress_callback)
-        
-        # Get S3 URL from the result if available, or upload to S3 if needed
-        s3_video_url = None
-        if "metadata" in unified_result and "s3_video_url" in unified_result["metadata"]:
-            s3_video_url = unified_result["metadata"]["s3_video_url"]
-        else:
-            # Upload to S3 for storage if not already done in the analysis
-            update_progress_callback("uploading_to_s3", 85)
-            s3_object_key = f"videos/{os.path.basename(file_path)}"
-            try:
-                s3_video_url = upload_to_s3(file_path, S3_BUCKET_NAME, s3_object_name=s3_object_key)
-                print(f"Successfully uploaded to S3: {s3_video_url}")
-            except Exception as e:
-                print(f"Error uploading to S3 for storage: {e}")
-                # Continue even if S3 upload fails
-                s3_video_url = f"file://{filename}"
-        
-        # Update progress
-        update_progress_callback("finalizing", 90)
-        
-        # Add metadata
+
+        # Pass analysis_id to the unified function
+        unified_result = analyze_video_unified(file_path, analysis_id, progress_callback)
+
+        # Get S3 URL from the result if available (primarily for metadata display)
+        s3_video_url = unified_result.get("metadata", {}).get("s3_video_url", f"file://{filename}")
+
+        update_progress_callback("finalizing", 95) # Update progress after analysis
+
+        # Construct final data structure
         result_with_metadata = {
             "metadata": {
                 "id": analysis_id,
-                "video_url": s3_video_url,
+                "video_url": s3_video_url, # Store S3 URL or file indicator
                 "filename": filename,
                 "analyzed_date": datetime.now().strftime("%B %d, %Y %H:%M"),
                 "analysis_sources": ["Gemini", "ClarifAI"],
                 "confidence_index": unified_result.get("metadata", {}).get("confidence_index", 75)
             },
-            **unified_result
+            **(unified_result if isinstance(unified_result, dict) else {})
         }
-        
-        # Save the analysis to MongoDB
-        content_name = filename
-        mongo_storage = MongoDBStorage()
-        
-        # Make sure result_with_metadata has all required fields
-        result_with_metadata["analysis_id"] = analysis_id
-        result_with_metadata["content_name"] = content_name
-        
-        mongo_storage.save_analysis(result_with_metadata)
-        
-        # Add to analyses list
-        analyses.append({
-            "metadata": {
-                "id": analysis_id,
-                "video_url": s3_video_url,
-                "filename": filename,
-                "analyzed_date": datetime.now().strftime("%B %d, %Y %H:%M")
-            },
-            "analysis_data": result_with_metadata
-        })
-        
+        # Ensure ID exists (should be redundant now but safe)
+        if "id" not in result_with_metadata.get("metadata", {}):
+             result_with_metadata["metadata"]["id"] = analysis_id
+        if "analysis_id" not in result_with_metadata:
+             result_with_metadata["analysis_id"] = analysis_id
+        if "content_name" not in result_with_metadata:
+             result_with_metadata["content_name"] = filename
+
         # Update progress to completed with the result
         if analysis_id in analysis_progress:
-            analysis_progress[analysis_id]["result"] = result_with_metadata
+            analysis_progress[analysis_id]["result"] = result_with_metadata # Store result in memory
         update_progress_callback("completed", 100)
-        
-        # Clean up temp file
-        if os.path.exists(file_path):
-            os.remove(file_path)
-            
+
         print(f"Unified analysis completed for: {filename}")
-        
+
     except Exception as e:
         print(f"Error processing file analysis: {e}")
         update_progress_callback("error", 0)
-        
-        # Clean up temp file on error
+        if analysis_id in analysis_progress:
+             error_result = {
+                 "metadata": { "id": analysis_id, "filename": filename },
+                 "error": str(e),
+                 "message": "Analysis failed. Please check the server logs for details.",
+                 "timestamp": datetime.now().isoformat()
+            }
+             analysis_progress[analysis_id]["result"] = error_result
+             analysis_progress[analysis_id]["status"] = "error"
+             # Attempt to save error report to S3
+             try:
+                 from unified_analysis import save_unified_analysis # Import locally if needed
+                 save_unified_analysis(error_result)
+             except Exception as save_e:
+                 print(f"Could not save error analysis report: {save_e}")
+
+    finally:
+        # Clean up temp file
         if os.path.exists(file_path):
-            os.remove(file_path)
+            try:
+                os.remove(file_path)
+                print(f"Cleaned up temp file: {file_path}")
+            except Exception as e_rem:
+                 print(f"Error removing temp file {file_path}: {e_rem}")
 
 @app.route('/api/saved-analyses', methods=['GET'])
 def get_saved_analyses():
-    """Get saved analyses from MongoDB storage"""
+    """Get saved analyses list by listing objects in S3."""
+    limit = int(request.args.get('limit', 20))
+    skip = int(request.args.get('skip', 0))
+    prefix = "analysis-results/"
+
+    analyses_list = []
     try:
-        limit = int(request.args.get('limit', 20))
-        skip = int(request.args.get('skip', 0))
-        
-        # Get analyses from MongoDB with a quick timeout
-        try:
-            # Return empty immediately if collection is empty
-            total_count = 0
-            stored_analyses = []
-            
-            # Use a quick timeout for MongoDB operations - this will either
-            # connect quickly or fail quickly, preventing the frontend from waiting
-            client = pymongo.MongoClient(
-                os.getenv("MONGODB_URI"),
-                serverSelectionTimeoutMS=1000,  # 1 second timeout
-                connectTimeoutMS=1000,
-                socketTimeoutMS=1000
-            )
-            
-            print("Connecting to MongoDB...")
-            
-            # Check if the database exists first
-            db_names = client.list_database_names()
-            db_name = os.getenv("MONGODB_DB", "branded_content_ai")
-            
-            if db_name not in db_names:
-                print(f"Database '{db_name}' does not exist. Returning empty list.")
-                return jsonify({"analyses": [], "total": 0})
-                
-            # Database exists, access it
-            db = client[db_name]
-            
-            # Check if the collection exists
-            coll_name = os.getenv("MONGODB_ANALYSES_COLLECTION", "analyses")
-            if coll_name not in db.list_collection_names():
-                print(f"Collection '{coll_name}' does not exist. Returning empty list.")
-                return jsonify({"analyses": [], "total": 0})
-                
-            # Collection exists, access it
-            coll = db[coll_name]
-            
-            # Try a quick operation to test connection and count documents
-            total_count = coll.count_documents({})
-            print(f"Total analyses in collection: {total_count}")
-            
-            # If we have documents, fetch them with pagination
-            if total_count > 0:
-                cursor = coll.find({}).sort("timestamp", -1).skip(skip).limit(limit)
-                for doc in cursor:
-                    if "_id" in doc:
-                        doc["_id"] = str(doc["_id"])
-                    stored_analyses.append(doc)
-            
-            client.close()
-            
-        except Exception as e:
-            print(f"Error accessing MongoDB: {e}")
-            traceback.print_exc()
-            # Don't wait - just return empty list immediately
-            return jsonify({"analyses": [], "total": 0})
-        
-        # Format analyses
-        formatted_analyses = []
-        for analysis in stored_analyses:
-            try:
-                analysis_id = analysis.get("id")
-                if not analysis_id:
-                    continue
-                    
-                # Extract video URL from metadata or fall back to content_name
-                video_url = None
-                if analysis.get("analysis_data", {}).get("metadata", {}).get("video_url"):
-                    video_url = analysis["analysis_data"]["metadata"]["video_url"]
-                elif analysis.get("content_name"):
-                    video_url = analysis.get("content_name")
+        print(f"Listing analyses from S3 bucket {S3_BUCKET_NAME} with prefix {prefix}")
+        # Use list_objects_v2 for pagination support if needed, or simpler list_objects
+        paginator = s3_client.get_paginator('list_objects_v2')
+        pages = paginator.paginate(Bucket=S3_BUCKET_NAME, Prefix=prefix)
 
-                formatted_analyses.append({
-                    "id": analysis_id,
-                    "video_url": video_url,
-                    "analyzed_date": analysis.get("formatted_date", analysis.get("timestamp")),
-                    "thumbnail": analysis.get("thumbnail"),
-                    "content_name": analysis.get("content_name", "Unknown"),
-                    "analysis_data": analysis.get("analysis_data", {})
-                })
-            except Exception as inner_e:
-                print(f"Error processing analysis: {inner_e}")
-                continue
-        
-        return jsonify({"analyses": formatted_analyses, "total": total_count})
+        all_objects = []
+        for page in pages:
+            if "Contents" in page:
+                all_objects.extend(page['Contents'])
+
+        # Sort by LastModified date, newest first
+        all_objects.sort(key=lambda x: x['LastModified'], reverse=True)
+
+        # Apply skip and limit
+        paginated_objects = all_objects[skip : skip + limit]
+
+        for obj in paginated_objects:
+            object_key = obj['Key']
+            # Extract analysis ID (assuming format analysis-results/{id}.json)
+            if not object_key.endswith("_error.json"):
+                try:
+                     analysis_id = object_key.split('/')[-1].replace('.json', '')
+                     # Download metadata or summary from the file for display?
+                     # For now, just list basic info
+                     analyses_list.append({
+                         "id": analysis_id,
+                         "content_name": f"Analysis {analysis_id}", # Placeholder name
+                         "timestamp": obj['LastModified'].isoformat(),
+                         "formatted_date": obj['LastModified'].strftime("%Y-%m-%d %H:%M:%S"),
+                         "source": "S3"
+                         # Add thumbnail later if stored separately
+                     })
+                except Exception as e:
+                     print(f"Error processing S3 object key {object_key}: {e}")
+
+        print(f"Found {len(analyses_list)} analyses in S3 (after pagination)")
+        return jsonify({"analyses": analyses_list})
+
     except Exception as e:
-        print(f"Error in get_saved_analyses: {e}")
+        print(f"Error listing saved analyses from S3: {e}")
         traceback.print_exc()
-        return jsonify({"analyses": [], "total": 0})
+        return jsonify({"error": "Failed to retrieve saved analyses", "analyses": []}), 500
 
-# Add a compatibility route that maps to our new saved-analyses API
+# Remove compatibility route or update it
 @app.route('/api/analyses', methods=['GET'])
 def get_analyses_compat():
-    """Compatibility route that redirects to get_saved_analyses"""
-    try:
-        limit = int(request.args.get('limit', 20))
-        skip = int(request.args.get('skip', 0))
-        
-        # Get analyses from MongoDB with a quick timeout
-        try:
-            # Return empty immediately if collection is empty
-            stored_analyses = []
-            
-            # Use a quick timeout for MongoDB operations
-            client = pymongo.MongoClient(
-                os.getenv("MONGODB_URI"),
-                serverSelectionTimeoutMS=2000,  # 2 second timeout
-                connectTimeoutMS=2000,
-                socketTimeoutMS=2000
-            )
-            db = client[os.getenv("MONGODB_DB", "branded_content_ai")]
-            coll = db[os.getenv("MONGODB_ANALYSES_COLLECTION", "analyses")]
-            
-            # Try to fetch documents with pagination
-            cursor = coll.find({}).sort("timestamp", -1).skip(skip).limit(limit)
-            for doc in cursor:
-                if "_id" in doc:
-                    doc["_id"] = str(doc["_id"])
-                stored_analyses.append(doc)
-            
-            client.close()
-            
-        except Exception as e:
-            print(f"Error accessing MongoDB: {e}")
-            # Don't wait - just return empty list immediately
-            return jsonify({"analyses": []})
-        
-        # Format to match the expected format from the old API
-        formatted_analyses = []
-        for analysis in stored_analyses:
-            try:
-                analysis_id = analysis.get("id")
-                if not analysis_id:
-                    continue
-                    
-                # Extract video URL from metadata or fall back to content_name
-                video_url = None
-                if analysis.get("analysis_data", {}).get("metadata", {}).get("video_url"):
-                    video_url = analysis["analysis_data"]["metadata"]["video_url"]
-                elif analysis.get("content_name"):
-                    video_url = analysis.get("content_name")
-
-                formatted_analyses.append({
-                    "metadata": {
-                        "id": analysis_id,
-                        "video_url": video_url,
-                        "analyzed_date": analysis.get("formatted_date", analysis.get("timestamp"))
-                    },
-                    "analysis_data": analysis.get("analysis_data", {})
-                })
-            except Exception as inner_e:
-                print(f"Error processing analysis {analysis.get('id')}: {inner_e}")
-                continue
-        
-        return jsonify({"analyses": formatted_analyses})
-    except Exception as e:
-        print(f"Error in get_analyses_compat: {e}")
-        traceback.print_exc()
-        return jsonify({"analyses": []})
+     print("Warning: /api/analyses GET endpoint is deprecated. Use /api/saved-analyses.")
+     # Return empty list or redirect?
+     return jsonify({"analyses": []}) 
 
 # Close MongoDB connection when the app is terminated
 def shutdown_mongodb():

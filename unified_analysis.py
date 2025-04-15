@@ -8,11 +8,13 @@ from dotenv import load_dotenv
 import google.generativeai as genai
 import asyncio
 import re
+import io  # Import io for uploading string data
 
 # Import necessary modules for both analysis pipelines
 from inference_layer import analyze_video_output
 from structured_analysis import process_analysis, validate_demographic_data
-from clarif_ai_insights import analyze_video_multi_model, download_video_with_ytdlp, upload_to_s3, S3_BUCKET_NAME
+from clarif_ai_insights import analyze_video_multi_model, download_video_with_ytdlp, upload_to_s3
+from s3_utils import S3_BUCKET_NAME, s3_client
 
 # Load environment variables
 load_dotenv()
@@ -795,64 +797,113 @@ def fallback_merge(gemini_analysis: Dict[str, Any], clarifai_analysis: Dict[str,
     
     return merged
 
-def save_unified_analysis(unified_analysis: Dict[str, Any]) -> str:
-    """Save the unified analysis to a file."""
+def upload_json_to_s3(data: Dict[str, Any], bucket: str, s3_object_name: str):
+    """Uploads a dictionary as a JSON file to S3."""
     try:
-        # Verify JSON validity before saving
-        json_str = json.dumps(unified_analysis)
+        json_string = json.dumps(data, indent=2, ensure_ascii=False)
+        # Encode the string to bytes
+        json_bytes = json_string.encode('utf-8')
+
+        print(f"Uploading JSON data to s3://{bucket}/{s3_object_name}")
+        s3_client.put_object(
+            Bucket=bucket,
+            Key=s3_object_name,
+            Body=json_bytes,
+            ContentType='application/json',
+            ACL='private' # Keep analysis results private by default
+        )
+        print(f"Successfully uploaded JSON to s3://{bucket}/{s3_object_name}")
+    except Exception as e:
+        print(f"Error uploading JSON to S3: {str(e)}")
+        # Don't raise, allow local saving to proceed if possible
+
+def save_unified_analysis(unified_analysis: Dict[str, Any]) -> str:
+    """Save the unified analysis locally and upload to S3."""
+    filename = None
+    analysis_id = unified_analysis.get("metadata", {}).get("id")
+
+    try:
+        # Verify JSON validity before saving/uploading
+        json_str = json.dumps(unified_analysis, indent=2, ensure_ascii=False)
         verified_analysis = json.loads(json_str)
-        
-        # Generate filename with timestamp
+
+        # --- Save Locally (optional, good for debugging) ---
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"unified_analyses/unified_analysis_{timestamp}.json"
-        
-        # Save the result with pretty printing
-        with open(filename, 'w', encoding='utf-8') as f:
-            json.dump(verified_analysis, f, indent=2, ensure_ascii=False)
-            
-        print(f"Unified analysis saved to: {filename}")
-        return filename
-        
+        # Use analysis_id if available for local filename, otherwise timestamp
+        local_filename_part = analysis_id if analysis_id else f"ts_{timestamp}"
+        local_filename = f"unified_analyses/unified_analysis_{local_filename_part}.json"
+        try:
+            with open(local_filename, 'w', encoding='utf-8') as f:
+                f.write(json_str) # Write the verified string
+            print(f"Unified analysis saved locally to: {local_filename}")
+        except Exception as e:
+            print(f"Error saving analysis locally: {e}")
+        # ---------------------------------------------------
+
+        # --- Upload to S3 --- A
+        if analysis_id and S3_BUCKET_NAME:
+            s3_object_key = f"analysis-results/{analysis_id}.json"
+            upload_json_to_s3(verified_analysis, S3_BUCKET_NAME, s3_object_key)
+        else:
+            print("Skipping S3 upload: Analysis ID or S3 Bucket Name missing.")
+        # -------------------
+
+        return local_filename # Return local filename for consistency if needed
+
     except json.JSONDecodeError as e:
         print(f"Error in JSON structure when saving unified analysis: {e}")
-        # Create a simplified version that can be saved
+        # Save simplified error version locally
         simplified = {
             "metadata": {
                 "timestamp": datetime.now().isoformat(),
                 "error": f"JSON validation error: {str(e)}",
-                "partial_data": True
+                "partial_data": True,
+                "id": analysis_id
             },
             "raw_data": str(unified_analysis)[:1000] + "..." if len(str(unified_analysis)) > 1000 else str(unified_analysis)
         }
-        
-        # Save the simplified version
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"unified_analyses/unified_analysis_error_{timestamp}.json"
-        with open(filename, 'w', encoding='utf-8') as f:
-            json.dump(simplified, f, indent=2)
-            
-        print(f"Error occurred. Simplified analysis saved to: {filename}")
+        local_filename_part = analysis_id if analysis_id else f"error_ts_{timestamp}"
+        filename = f"unified_analyses/unified_analysis_{local_filename_part}_error.json"
+        try:
+            with open(filename, 'w', encoding='utf-8') as f:
+                json.dump(simplified, f, indent=2)
+            print(f"Error occurred. Simplified analysis saved locally to: {filename}")
+        except Exception as e_save:
+             print(f"Could not save error analysis locally: {e_save}")
+        # Attempt to upload error report to S3 as well
+        if analysis_id and S3_BUCKET_NAME:
+            s3_error_key = f"analysis-results/{analysis_id}_error.json"
+            try:
+                 upload_json_to_s3(simplified, S3_BUCKET_NAME, s3_error_key)
+                 print(f"Uploaded simplified error analysis to S3: {s3_error_key}")
+            except Exception as e_s3_save:
+                 print(f"Could not upload error analysis to S3: {e_s3_save}")
         return filename
-    except Exception as e:
-        print(f"Error saving unified analysis: {e}")
-        raise
 
-def analyze_video(video_url_or_path: str, progress_callback=None) -> Dict[str, Any]:
+    except Exception as e:
+        print(f"General error saving unified analysis: {e}")
+        # Log the error but don't necessarily stop the entire analysis process
+        # Depending on where this is called, you might want to raise e
+        return None # Indicate saving failed
+
+def analyze_video(video_url_or_path: str, analysis_id: str, progress_callback=None) -> Dict[str, Any]:
     """
-    Main function to analyze a video URL or file path and generate a unified analysis.
-    
+    Main function to analyze a video URL or path and generate a unified analysis.
+
     Args:
         video_url_or_path: URL of the video or path to a local video file
+        analysis_id: The unique ID generated for this analysis session
         progress_callback: Optional callback function to report progress
             Function signature: progress_callback(stage: str, progress_pct: float)
-            
+
     Returns:
         Unified analysis combining insights from both Gemini and ClarifAI
     """
     try:
         is_url = video_url_or_path.startswith(('http://', 'https://', 's3://'))
         source_type = "URL" if is_url else "file"
-        print(f"Starting unified analysis for video {source_type}: {video_url_or_path}")
+        print(f"Starting unified analysis for video {source_type}: {video_url_or_path} (ID: {analysis_id})")
         
         # Notify start of gemini and clarifai analysis
         if progress_callback:
@@ -894,9 +945,10 @@ def analyze_video(video_url_or_path: str, progress_callback=None) -> Dict[str, A
         if progress_callback:
             progress_callback("validating_unified", 80)
             
-        # Add error information if any
+        # Add analysis ID and error information to metadata BEFORE saving
         if "metadata" not in unified_analysis:
             unified_analysis["metadata"] = {}
+        unified_analysis["metadata"]["id"] = analysis_id # Ensure ID is set here
         
         if gemini_has_error or clarifai_has_error:
             unified_analysis["metadata"]["has_errors"] = True
@@ -905,16 +957,17 @@ def analyze_video(video_url_or_path: str, progress_callback=None) -> Dict[str, A
                 "clarifai_error": clarifai_analysis.get("metadata", {}).get("error") if clarifai_has_error else None
             }
         
-        # Save the unified analysis
+        # Save the unified analysis (which now includes the ID)
         save_unified_analysis(unified_analysis)
         
         return unified_analysis
         
     except Exception as e:
-        print(f"Error in unified analysis: {e}")
+        print(f"Error in unified analysis (ID: {analysis_id}): {e}")
         # Create a basic error analysis that can be returned
         error_analysis = {
             "metadata": {
+                "id": analysis_id, # Include ID in error metadata
                 "timestamp": datetime.now().isoformat(),
                 "video_id": "error_" + os.path.basename(video_url_or_path).split('?')[0],
                 "has_errors": True,
@@ -935,7 +988,7 @@ def analyze_video(video_url_or_path: str, progress_callback=None) -> Dict[str, A
         try:
             save_unified_analysis(error_analysis)
         except:
-            print("Could not save error analysis")
+            print(f"Could not save error analysis for ID: {analysis_id}")
             
         return error_analysis
 
@@ -952,7 +1005,7 @@ if __name__ == "__main__":
     if args.url:
         # Test with URL
         print(f"Starting unified analysis test with video URL: {args.url}")
-        result = analyze_video(args.url)
+        result = analyze_video(args.url, "test_url_analysis")
         print("Analysis completed")
         
         # Save result to file for inspection
@@ -969,7 +1022,7 @@ if __name__ == "__main__":
             sys.exit(1)
             
         print(f"Starting unified analysis test with local file: {args.file}")
-        result = analyze_video(args.file)
+        result = analyze_video(args.file, "test_file_analysis")
         print("Analysis completed")
         
         # Save result to file for inspection
@@ -984,7 +1037,7 @@ if __name__ == "__main__":
         video_url = "https://www.youtube.com/shorts/Ed8tZ-Ny36I"
         print("No URL or file specified. Using default test URL.")
         print(f"Starting unified analysis test with video: {video_url}")
-        result = analyze_video(video_url)
+        result = analyze_video(video_url, "test_default_analysis")
         print("Analysis completed")
         
         # Save result to file for inspection
