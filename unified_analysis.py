@@ -887,13 +887,14 @@ def save_unified_analysis(unified_analysis: Dict[str, Any]) -> str:
         # Depending on where this is called, you might want to raise e
         return None # Indicate saving failed
 
-def analyze_video(video_url_or_path: str, analysis_id: str, progress_callback=None) -> Dict[str, Any]:
+def analyze_video(video_url_or_path: str, analysis_id: str, analysis_name: str, progress_callback=None) -> Dict[str, Any]:
     """
     Main function to analyze a video URL or path and generate a unified analysis.
 
     Args:
         video_url_or_path: URL of the video or path to a local video file
         analysis_id: The unique ID generated for this analysis session
+        analysis_name: User-provided name for the analysis
         progress_callback: Optional callback function to report progress
             Function signature: progress_callback(stage: str, progress_pct: float)
 
@@ -903,7 +904,7 @@ def analyze_video(video_url_or_path: str, analysis_id: str, progress_callback=No
     try:
         is_url = video_url_or_path.startswith(('http://', 'https://', 's3://'))
         source_type = "URL" if is_url else "file"
-        print(f"Starting unified analysis for video {source_type}: {video_url_or_path} (ID: {analysis_id})")
+        print(f"Starting unified analysis for video {source_type}: {video_url_or_path} (Name: {analysis_name}, ID: {analysis_id})")
         
         # Notify start of gemini and clarifai analysis
         if progress_callback:
@@ -945,10 +946,11 @@ def analyze_video(video_url_or_path: str, analysis_id: str, progress_callback=No
         if progress_callback:
             progress_callback("validating_unified", 80)
             
-        # Add analysis ID and error information to metadata BEFORE saving
+        # Add analysis ID, name, and error information to metadata BEFORE saving
         if "metadata" not in unified_analysis:
             unified_analysis["metadata"] = {}
-        unified_analysis["metadata"]["id"] = analysis_id # Ensure ID is set here
+        unified_analysis["metadata"]["id"] = analysis_id
+        unified_analysis["metadata"]["analysis_name"] = analysis_name
         
         if gemini_has_error or clarifai_has_error:
             unified_analysis["metadata"]["has_errors"] = True
@@ -957,17 +959,18 @@ def analyze_video(video_url_or_path: str, analysis_id: str, progress_callback=No
                 "clarifai_error": clarifai_analysis.get("metadata", {}).get("error") if clarifai_has_error else None
             }
         
-        # Save the unified analysis (which now includes the ID)
+        # Save the unified analysis (which now includes the ID and name)
         save_unified_analysis(unified_analysis)
         
         return unified_analysis
         
     except Exception as e:
-        print(f"Error in unified analysis (ID: {analysis_id}): {e}")
+        print(f"Error in unified analysis (ID: {analysis_id}, Name: {analysis_name}): {e}")
         # Create a basic error analysis that can be returned
         error_analysis = {
             "metadata": {
-                "id": analysis_id, # Include ID in error metadata
+                "id": analysis_id,
+                "analysis_name": analysis_name,
                 "timestamp": datetime.now().isoformat(),
                 "video_id": "error_" + os.path.basename(video_url_or_path).split('?')[0],
                 "has_errors": True,
@@ -1005,7 +1008,7 @@ if __name__ == "__main__":
     if args.url:
         # Test with URL
         print(f"Starting unified analysis test with video URL: {args.url}")
-        result = analyze_video(args.url, "test_url_analysis")
+        result = analyze_video(args.url, "test_url_analysis", "Test URL Analysis")
         print("Analysis completed")
         
         # Save result to file for inspection
@@ -1022,7 +1025,7 @@ if __name__ == "__main__":
             sys.exit(1)
             
         print(f"Starting unified analysis test with local file: {args.file}")
-        result = analyze_video(args.file, "test_file_analysis")
+        result = analyze_video(args.file, "test_file_analysis", "Test File Analysis")
         print("Analysis completed")
         
         # Save result to file for inspection
@@ -1037,7 +1040,7 @@ if __name__ == "__main__":
         video_url = "https://www.youtube.com/shorts/Ed8tZ-Ny36I"
         print("No URL or file specified. Using default test URL.")
         print(f"Starting unified analysis test with video: {video_url}")
-        result = analyze_video(video_url, "test_default_analysis")
+        result = analyze_video(video_url, "test_default_analysis", "Test Default Analysis")
         print("Analysis completed")
         
         # Save result to file for inspection

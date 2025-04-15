@@ -21,6 +21,7 @@ from api_routes import analysis_bp
 import traceback
 import atexit
 import subprocess
+import concurrent.futures
 
 app = Flask(__name__)
 #comment out the CORS middleware to avoid duplicate headers
@@ -323,13 +324,15 @@ def analyze_unified():
     """Endpoint for unified analysis combining both Gemini and ClarifAI insights."""
     try:
         analysis_id = str(uuid.uuid4())
-        
+        analysis_name = None # Initialize analysis_name
+
         # Initialize the analysis progress tracking
         analysis_progress[analysis_id] = {
             "progress": 0,
             "step": 0,
             "status": "initializing",
-            "result": None
+            "result": None,
+            "name": "Processing..." # Default name while processing
         }
         
         # Define a progress callback function
@@ -367,15 +370,19 @@ def analyze_unified():
         content_type = request.headers.get('Content-Type', '')
         
         # Handle URL-based analysis (application/json)
-        if 'application/json' in content_type and request.json and 'url' in request.json:
+        if 'application/json' in content_type and request.json:
             video_url = request.json.get('url')
+            analysis_name = request.json.get('name', 'URL Analysis') # Get name from JSON
             if not video_url:
                 return jsonify({"error": "URL is required"}), 400
             
+            # Set analysis name in progress tracker
+            analysis_progress[analysis_id]["name"] = analysis_name
+
             # Start analysis in background thread
             thread = threading.Thread(
                 target=process_unified_analysis_url,
-                args=(analysis_id, video_url, update_progress_callback)
+                args=(analysis_id, video_url, analysis_name, update_progress_callback)
             )
             thread.daemon = True
             thread.start()
@@ -398,8 +405,16 @@ def analyze_unified():
             if not file or file.filename == '':
                 return jsonify({"error": "No file selected"}), 400
             
-            print(f"Received file upload: {file.filename}, Content-Type: {file.content_type}, Size: {file.content_length}")
-                
+            # Get analysis name from form data (use filename as fallback)
+            analysis_name = request.form.get('name', file.filename)
+            if not analysis_name.strip(): # Handle empty name field
+                 analysis_name = file.filename
+
+            print(f"Received file upload: {file.filename}, Analysis Name: {analysis_name}")
+            
+            # Set analysis name in progress tracker
+            analysis_progress[analysis_id]["name"] = analysis_name
+
             # Save the uploaded file temporarily
             temp_path = f"temp_video_{analysis_id}.mp4"
             file.save(temp_path)
@@ -408,7 +423,7 @@ def analyze_unified():
             # Start analysis in background thread
             thread = threading.Thread(
                 target=process_unified_analysis_file,
-                args=(analysis_id, temp_path, file.filename, update_progress_callback)
+                args=(analysis_id, temp_path, file.filename, analysis_name, update_progress_callback)
             )
             thread.daemon = True
             thread.start()
@@ -496,13 +511,13 @@ def get_analysis_progress(analysis_id):
         "status": progress_data["status"]
     })
 
-def process_unified_analysis_url(analysis_id, video_url, update_progress_callback):
+def process_unified_analysis_url(analysis_id, video_url, analysis_name, update_progress_callback):
     """Process a URL-based analysis in the background and update progress."""
     local_path = None # Define local_path here for cleanup scope
     try:
         update_progress_callback("initializing", 0)
         update_progress_callback("downloading_video", 5)
-        print(f"Starting unified analysis for video URL: {video_url}")
+        print(f"Starting unified analysis for video URL: {video_url} (Name: {analysis_name}, ID: {analysis_id})")
 
         def progress_callback(stage, progress_pct):
             update_progress_callback(stage, progress_pct)
@@ -510,7 +525,7 @@ def process_unified_analysis_url(analysis_id, video_url, update_progress_callbac
         if 'youtube.com' in video_url or 'youtu.be' in video_url:
             print("YouTube URL detected - attempting analysis...")
 
-        unified_result = analyze_video_unified(video_url, analysis_id, progress_callback)
+        unified_result = analyze_video_unified(video_url, analysis_id, analysis_name, progress_callback)
 
         update_progress_callback("finalizing", 90)
 
@@ -518,6 +533,7 @@ def process_unified_analysis_url(analysis_id, video_url, update_progress_callbac
         result_with_metadata = {
             "metadata": {
                 "id": analysis_id,
+                "analysis_name": analysis_name,
                 "video_url": video_url,
                 "analyzed_date": datetime.now().strftime("%B %d, %Y %H:%M"),
                 "analysis_sources": ["Gemini", "ClarifAI"],
@@ -538,14 +554,14 @@ def process_unified_analysis_url(analysis_id, video_url, update_progress_callbac
             analysis_progress[analysis_id]["result"] = result_with_metadata # Store result in memory
         update_progress_callback("completed", 100)
 
-        print(f"Unified analysis completed for: {video_url}")
+        print(f"Unified analysis completed for: {video_url} (Name: {analysis_name})")
 
     except Exception as e:
-        print(f"Error processing URL analysis: {e}")
+        print(f"Error processing URL analysis (Name: {analysis_name}): {e}")
         update_progress_callback("error", 0)
         if analysis_id in analysis_progress:
             error_result = {
-                 "metadata": { "id": analysis_id, "video_url": video_url },
+                 "metadata": { "id": analysis_id, "analysis_name": analysis_name, "video_url": video_url },
                  "error": str(e),
                  "message": "Analysis failed. Please check the server logs for details.",
                  "timestamp": datetime.now().isoformat()
@@ -564,11 +580,11 @@ def process_unified_analysis_url(analysis_id, video_url, update_progress_callbac
          # This assumes download happens within analyze_video_unified now
          pass # Add cleanup logic here if needed based on where download occurs
 
-def process_unified_analysis_file(analysis_id, file_path, filename, update_progress_callback):
+def process_unified_analysis_file(analysis_id, file_path, filename, analysis_name, update_progress_callback):
     """Process a file-based analysis in the background and update progress."""
     try:
         update_progress_callback("initializing", 5)
-        print(f"Starting file analysis process for {filename} at {file_path}")
+        print(f"Starting file analysis process for {filename} (Name: {analysis_name}, ID: {analysis_id})")
 
         if not os.path.exists(file_path):
             raise FileNotFoundError(f"Temporary file {file_path} not found")
@@ -580,8 +596,8 @@ def process_unified_analysis_file(analysis_id, file_path, filename, update_progr
             update_progress_callback(stage, progress_pct)
             print(f"Analysis progress: {stage} - {progress_pct}%")
 
-        # Pass analysis_id to the unified function
-        unified_result = analyze_video_unified(file_path, analysis_id, progress_callback)
+        # Pass analysis_id and analysis_name to the unified function
+        unified_result = analyze_video_unified(file_path, analysis_id, analysis_name, progress_callback)
 
         # Get S3 URL from the result if available (primarily for metadata display)
         s3_video_url = unified_result.get("metadata", {}).get("s3_video_url", f"file://{filename}")
@@ -592,6 +608,7 @@ def process_unified_analysis_file(analysis_id, file_path, filename, update_progr
         result_with_metadata = {
             "metadata": {
                 "id": analysis_id,
+                "analysis_name": analysis_name,
                 "video_url": s3_video_url, # Store S3 URL or file indicator
                 "filename": filename,
                 "analyzed_date": datetime.now().strftime("%B %d, %Y %H:%M"),
@@ -613,14 +630,14 @@ def process_unified_analysis_file(analysis_id, file_path, filename, update_progr
             analysis_progress[analysis_id]["result"] = result_with_metadata # Store result in memory
         update_progress_callback("completed", 100)
 
-        print(f"Unified analysis completed for: {filename}")
+        print(f"Unified analysis completed for: {filename} (Name: {analysis_name})")
 
     except Exception as e:
-        print(f"Error processing file analysis: {e}")
+        print(f"Error processing file analysis (Name: {analysis_name}): {e}")
         update_progress_callback("error", 0)
         if analysis_id in analysis_progress:
              error_result = {
-                 "metadata": { "id": analysis_id, "filename": filename },
+                 "metadata": { "id": analysis_id, "analysis_name": analysis_name, "filename": filename },
                  "error": str(e),
                  "message": "Analysis failed. Please check the server logs for details.",
                  "timestamp": datetime.now().isoformat()
@@ -643,64 +660,12 @@ def process_unified_analysis_file(analysis_id, file_path, filename, update_progr
             except Exception as e_rem:
                  print(f"Error removing temp file {file_path}: {e_rem}")
 
-@app.route('/api/saved-analyses', methods=['GET'])
-def get_saved_analyses():
-    """Get saved analyses list by listing objects in S3."""
-    limit = int(request.args.get('limit', 20))
-    skip = int(request.args.get('skip', 0))
-    prefix = "analysis-results/"
-
-    analyses_list = []
-    try:
-        print(f"Listing analyses from S3 bucket {S3_BUCKET_NAME} with prefix {prefix}")
-        # Use list_objects_v2 for pagination support if needed, or simpler list_objects
-        paginator = s3_client.get_paginator('list_objects_v2')
-        pages = paginator.paginate(Bucket=S3_BUCKET_NAME, Prefix=prefix)
-
-        all_objects = []
-        for page in pages:
-            if "Contents" in page:
-                all_objects.extend(page['Contents'])
-
-        # Sort by LastModified date, newest first
-        all_objects.sort(key=lambda x: x['LastModified'], reverse=True)
-
-        # Apply skip and limit
-        paginated_objects = all_objects[skip : skip + limit]
-
-        for obj in paginated_objects:
-            object_key = obj['Key']
-            # Extract analysis ID (assuming format analysis-results/{id}.json)
-            if not object_key.endswith("_error.json"):
-                try:
-                     analysis_id = object_key.split('/')[-1].replace('.json', '')
-                     # Download metadata or summary from the file for display?
-                     # For now, just list basic info
-                     analyses_list.append({
-                         "id": analysis_id,
-                         "content_name": f"Analysis {analysis_id}", # Placeholder name
-                         "timestamp": obj['LastModified'].isoformat(),
-                         "formatted_date": obj['LastModified'].strftime("%Y-%m-%d %H:%M:%S"),
-                         "source": "S3"
-                         # Add thumbnail later if stored separately
-                     })
-                except Exception as e:
-                     print(f"Error processing S3 object key {object_key}: {e}")
-
-        print(f"Found {len(analyses_list)} analyses in S3 (after pagination)")
-        return jsonify({"analyses": analyses_list})
-
-    except Exception as e:
-        print(f"Error listing saved analyses from S3: {e}")
-        traceback.print_exc()
-        return jsonify({"error": "Failed to retrieve saved analyses", "analyses": []}), 500
-
 # Remove compatibility route or update it
 @app.route('/api/analyses', methods=['GET'])
 def get_analyses_compat():
      print("Warning: /api/analyses GET endpoint is deprecated. Use /api/saved-analyses.")
      # Return empty list or redirect?
-     return jsonify({"analyses": []}) 
+     return jsonify({"analyses": []})
 
 # Close MongoDB connection when the app is terminated
 def shutdown_mongodb():
