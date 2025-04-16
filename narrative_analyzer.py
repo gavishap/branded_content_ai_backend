@@ -255,7 +255,7 @@ For the Demographic Analysis section:
 
 For the Detailed Analysis section, include "In-depth Video Analysis" with these subsections:
 - Hook: Analyze the opening seconds and how effectively they grab attention.
-- Editing: Comment on pacing, transitions, and overall editing style.
+- Editing: Count the EXACT number of scene cuts/transitions in the video and calculate the average cuts per second. Describe the pacing, transitions, and overall editing style. For example "12 total cuts with approximately 0.5 cuts per second" or "8 total cuts with a cut every 3 seconds".
 - Tonality: Describe the emotional tone and mood of the advertisement.
 - Viral Potential: Rate each aspect on a scale of 0-100:
   * Visuals: Are they striking, unique, or highly appealing?
@@ -329,7 +329,7 @@ For the Demographic Analysis section:
 
 For the Detailed Analysis section, include "In-depth Video Analysis" with these subsections:
 - Hook: Analyze the opening seconds and how effectively they grab attention.
-- Editing: Comment on pacing, transitions, and overall editing style.
+- Editing: Count the EXACT number of scene cuts/transitions in the video and calculate the average cuts per second. Describe the pacing, transitions, and overall editing style. For example "12 total cuts with approximately 0.5 cuts per second" or "8 total cuts with a cut every 3 seconds".
 - Tonality: Describe the emotional tone and mood of the advertisement.
 - Viral Potential: Rate each aspect on a scale of 0-100:
   * Visuals: Are they striking, unique, or highly appealing?

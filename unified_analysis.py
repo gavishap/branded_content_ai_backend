@@ -310,6 +310,77 @@ def extract_metrics_from_gemini(gemini_analysis: Dict[str, Any]) -> Dict[str, An
     
     return metrics
 
+def extract_cut_data_from_gemini(gemini_analysis: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Extract cut count and average cuts per second from Gemini's editing analysis.
+    
+    Args:
+        gemini_analysis: The Gemini analysis data
+        
+    Returns:
+        Dict with total_cut_count and average_cuts_per_second
+    """
+    cut_data = {
+        "total_cut_count": 0,
+        "average_cuts_per_second": "No cut data available"
+    }
+    
+    try:
+        # Try to find editing information in the analysis
+        editing_text = ""
+        
+        if "analysis" in gemini_analysis and "Detailed Analysis" in gemini_analysis["analysis"]:
+            detailed = gemini_analysis["analysis"]["Detailed Analysis"]
+            if "In-depth Video Analysis" in detailed and "Editing" in detailed["In-depth Video Analysis"]:
+                editing_text = detailed["In-depth Video Analysis"]["Editing"]
+        
+        if not editing_text and "detailed_text" in gemini_analysis:
+            # Try to find editing information in the detailed text
+            editing_match = re.search(r'Editing:?\s*([^\n]+)', gemini_analysis["detailed_text"])
+            if editing_match:
+                editing_text = editing_match.group(1)
+        
+        if editing_text:
+            # Look for total cut count
+            cut_count_match = re.search(r'(\d+)\s*(?:total)?\s*(?:scene\s*)?cuts', editing_text, re.IGNORECASE)
+            if cut_count_match:
+                cut_data["total_cut_count"] = int(cut_count_match.group(1))
+            
+            # Look for average cuts per second
+            avg_cuts_match = re.search(r'(\d+(?:\.\d+)?)\s*cuts?\s*(?:per|every)\s*second', editing_text, re.IGNORECASE)
+            if avg_cuts_match:
+                avg_cuts = float(avg_cuts_match.group(1))
+                cut_data["average_cuts_per_second"] = f"Approximately {avg_cuts} cuts per second"
+            else:
+                # Look for "cut every X seconds" format
+                cut_every_match = re.search(r'(?:a\s*)?cut\s*every\s*(\d+(?:\.\d+)?)\s*seconds', editing_text, re.IGNORECASE)
+                if cut_every_match:
+                    seconds_per_cut = float(cut_every_match.group(1))
+                    if seconds_per_cut > 0:
+                        cut_data["average_cuts_per_second"] = f"1 cut every {seconds_per_cut} seconds"
+                        
+            # If we have total cuts but no frequency data, calculate it
+            if cut_data["total_cut_count"] > 0 and cut_data["average_cuts_per_second"] == "No cut data available":
+                # Look for video duration
+                duration_match = re.search(r'(\d+(?:\.\d+)?)\s*(?:second|minute)s?\s*(?:video|duration)', editing_text, re.IGNORECASE)
+                if duration_match:
+                    time_value = float(duration_match.group(1))
+                    time_unit = duration_match.group(2).lower()
+                    seconds = time_value if "second" in time_unit else time_value * 60
+                    
+                    if seconds > 0:
+                        cuts_per_second = cut_data["total_cut_count"] / seconds
+                        if cuts_per_second >= 0.1:
+                            cut_data["average_cuts_per_second"] = f"Approximately {cuts_per_second:.1f} cuts per second"
+                        else:
+                            seconds_per_cut = seconds / cut_data["total_cut_count"]
+                            cut_data["average_cuts_per_second"] = f"1 cut every {seconds_per_cut:.1f} seconds"
+    
+    except Exception as e:
+        print(f"Error extracting cut data from Gemini analysis: {e}")
+        
+    return cut_data
+
 def combine_analyses(gemini_analysis: Dict[str, Any], clarifai_analysis: Dict[str, Any]) -> Dict[str, Any]:
     """
     Generate the unification prompt and send to Gemini for processing.
@@ -324,17 +395,24 @@ def combine_analyses(gemini_analysis: Dict[str, Any], clarifai_analysis: Dict[st
     # Extract relevant metrics from both analyses
     gemini_metrics = extract_metrics_from_gemini(gemini_analysis)
     
+    # Extract cut data from Gemini's editing analysis
+    cut_data = extract_cut_data_from_gemini(gemini_analysis)
+    
     # Convert input analyses to properly formatted JSON strings
     gemini_json = json.dumps(gemini_analysis, ensure_ascii=False)
     clarifai_json = json.dumps(clarifai_analysis, ensure_ascii=False)
     
-    # Create the prompt for the unification model
+    # Create additional cut data information for the unified model
+    cut_data_json = json.dumps(cut_data, ensure_ascii=False)
+    
+    # Create the prompt for the unification model with added cut data context
     unification_prompt = f"""
 You are an expert AI video analyst specializing in synthesizing multiple analyses of video content.
-You are being provided with two different AI analyses of the same video:
+You are being provided with two different AI analyses of the same video, plus additional cut data:
 
 1. Standard Analysis (Gemini): Focuses on content, style, performance metrics, visual analysis, product analysis, viral potential, demographic analysis, and detailed observations.
 2. Structured Analysis (ClarifAI): Focuses on demographic representation, emotional tone, visual elements, and audience fit.
+3. Extracted Cut Data: {cut_data_json} - This contains the total number of cuts and average cuts per second information extracted from Gemini's analysis.
 
 # Your task:
 Create a unified, comprehensive analysis that combines insights from both sources while resolving any contradictions.
@@ -368,7 +446,7 @@ Create a unified, comprehensive analysis that combines insights from both source
    - visual_elements: Score visual quality, identify strengths and weaknesses, and analyze color scheme
    - audio_elements: Analyze audio quality, presence of music, voice clarity, etc.
    - narrative_structure: Evaluate storytelling, logical flow, and narrative coherence
-   - pacing_and_flow: Analyze editing rhythm, transitions, and overall tempo
+   - pacing_and_flow: Analyze editing rhythm, transitions, and overall tempo. CRUCIAL: Extract the exact number of cuts and average cuts per second from Gemini's analysis if available. Format as "X cuts per second" or "1 cut every Y seconds" depending on the frequency.
    - product_presentation: Identify featured products and evaluate their presentation
 2. Extract any visual data from both analyses, including color information, lighting quality, composition, etc.
 3. Pay particular attention to visual elements and color scheme details - provide hex codes for dominant colors when possible
@@ -591,7 +669,7 @@ You MUST respond using ONLY valid JSON in this EXACT structure. Ensure your outp
       "confidence": "High/Medium/Low",
       "insights": "Analysis of pacing and flow",
       "editing_pace": {{
-        "average_cuts_per_second": 0,
+        "average_cuts_per_second": "Use format like 'Approximately 0.8 cuts per second' or '1 cut every 2.5 seconds'",
         "total_cut_count": 0,
         "pacing_analysis": "Analysis of editing pace"
       }}
@@ -699,6 +777,59 @@ def validate_unified_analysis(unified_analysis: Dict[str, Any],
     Validate the unified analysis with a second LLM pass to ensure quality and completeness.
     """
     try:
+        # First, get cut data from Gemini
+        cut_data = extract_cut_data_from_gemini(gemini_analysis)
+        
+        # Check if we have valid cut data and ensure it's properly included in the unified analysis
+        if cut_data["total_cut_count"] > 0 or cut_data["average_cuts_per_second"] != "No cut data available":
+            # Make sure the content_quality section exists
+            if "content_quality" not in unified_analysis:
+                unified_analysis["content_quality"] = {}
+                
+            # Make sure the pacing_and_flow section exists
+            if "pacing_and_flow" not in unified_analysis["content_quality"]:
+                unified_analysis["content_quality"]["pacing_and_flow"] = {
+                    "score": 50,
+                    "confidence": "Medium",
+                    "insights": "Analysis based on cut count data from Gemini",
+                    "editing_pace": {}
+                }
+                
+            # Make sure the editing_pace section exists
+            if "editing_pace" not in unified_analysis["content_quality"]["pacing_and_flow"]:
+                unified_analysis["content_quality"]["pacing_and_flow"]["editing_pace"] = {}
+                
+            # Update cut data values
+            editing_pace = unified_analysis["content_quality"]["pacing_and_flow"]["editing_pace"]
+            
+            # Only update if either we don't have total_cut_count or the existing one is 0
+            if "total_cut_count" not in editing_pace or editing_pace["total_cut_count"] == 0:
+                editing_pace["total_cut_count"] = cut_data["total_cut_count"]
+                
+            # Only update if either we don't have average_cuts_per_second or it's the default message
+            if "average_cuts_per_second" not in editing_pace or editing_pace["average_cuts_per_second"] in ["No cut data available", "0"]:
+                editing_pace["average_cuts_per_second"] = cut_data["average_cuts_per_second"]
+                
+            # If we don't have a pacing_analysis, create a basic one
+            if "pacing_analysis" not in editing_pace or not editing_pace["pacing_analysis"]:
+                if cut_data["total_cut_count"] > 0:
+                    cuts_per_min = cut_data["total_cut_count"] * 60 / 60  # Assuming a 60-second video as fallback
+                    if "approximately" in cut_data["average_cuts_per_second"].lower():
+                        cuts_per_sec = float(re.search(r'(\d+(?:\.\d+)?)', cut_data["average_cuts_per_second"]).group(1))
+                        cuts_per_min = cuts_per_sec * 60
+                    
+                    if cuts_per_min > 30:
+                        pace_description = "very fast-paced"
+                    elif cuts_per_min > 20:
+                        pace_description = "fast-paced"
+                    elif cuts_per_min > 10:
+                        pace_description = "moderately paced"
+                    else:
+                        pace_description = "slower paced"
+                        
+                    editing_pace["pacing_analysis"] = f"The video uses a {pace_description} editing style with {cut_data['total_cut_count']} total cuts at {cut_data['average_cuts_per_second']}."
+        
+        # Now continue with the rest of the validation
         # First, let's check for and fix any non-numeric demographic data
         unified_analysis = validate_demographic_data_in_unified(unified_analysis)
         
@@ -1232,9 +1363,9 @@ def ensure_frontend_compatible_analysis(analysis: Dict[str, Any]) -> Dict[str, A
                 "confidence": "Medium",
                 "insights": "Not available",
                 "editing_pace": {
-                    "average_cuts_per_second": 0,
+                    "average_cuts_per_second": "No cut data available",
                     "total_cut_count": 0,
-                    "pacing_analysis": "Not available"
+                    "pacing_analysis": "Cut count analysis not available"
                 }
             }
         }
@@ -1250,6 +1381,9 @@ def fallback_merge(gemini_analysis: Dict[str, Any], clarifai_analysis: Dict[str,
     Simple fallback merging of analyses if the sophisticated approach fails.
     """
     print("Using fallback merge approach...")
+    
+    # Extract cut data from Gemini's editing analysis
+    cut_data = extract_cut_data_from_gemini(gemini_analysis)
     
     # Extract platform suitability data if available
     platform_fit = {}
@@ -1467,11 +1601,11 @@ def fallback_merge(gemini_analysis: Dict[str, Any], clarifai_analysis: Dict[str,
             "pacing_and_flow": {
                 "score": 50,
                 "confidence": "Medium",
-                "insights": "Not available",
+                "insights": "Analysis based on identified cut patterns in the video." if cut_data["average_cuts_per_second"] != "No cut data available" else "Not available",
                 "editing_pace": {
-                    "average_cuts_per_second": 0,
-                    "total_cut_count": 0,
-                    "pacing_analysis": "Not available"
+                    "average_cuts_per_second": cut_data["average_cuts_per_second"],
+                    "total_cut_count": cut_data["total_cut_count"],
+                    "pacing_analysis": f"The video contains {cut_data['total_cut_count']} cuts at a rate of {cut_data['average_cuts_per_second']}." if cut_data["total_cut_count"] > 0 else "Cut data not available from analysis"
                 }
             }
         },
