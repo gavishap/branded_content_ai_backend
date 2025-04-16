@@ -87,17 +87,19 @@ def generate_structured_output(raw_analysis: str, metadata: Dict[str, Any]) -> D
         {
         "overview": {"content_summary": "", "key_themes": [], "setting": ""},
         "demographics": {"age_distribution": {}, "gender_distribution": {}, "ethnicity_distribution": {}, "representation_quality": ""},
-        "emotional_analysis": {"dominant_emotions": [], "emotional_arc": "", "tone": ""},
+        "emotional_analysis": {"dominant_emotions": [], "emotional_arc": "", "tone": "", "emotional_resonance_score": 50, "insights": ""},
         "performance_metrics": {
         "engagement_score": 0,
         "ctr_potential": 0,
         "shareability": 0,
         "retention_score": 0,
+        "hook_score": 0,
+        "emotional_impact": 0,
         "virality_index": "",
         "representation_index": 0,
         "audience_match_scores": {}
         },
-        "audience_fit": {"primary_audience": "", "secondary_audiences": [], "platform_recommendations": []},
+        "audience_fit": {"primary_audience": "", "secondary_audiences": [], "platform_recommendations": [], "platform_fit": {}},
         "optimization_recommendations": {
         "emotional_impact": [],
         "visual_enhancements": [],
@@ -105,7 +107,44 @@ def generate_structured_output(raw_analysis: str, metadata: Dict[str, Any]) -> D
         "audience_targeting": [],
         "thumbnail_optimization": [],
         "engagement_triggers": []
-        }
+        },
+        "content_quality": {
+          "visual_elements": {
+            "score": 50,
+            "confidence": "Medium",
+            "strengths": [],
+            "improvement_areas": [],
+            "color_scheme": {
+              "dominant_colors": [],
+              "color_mood": "",
+              "saturation_level": 50,
+              "contrast_rating": 50
+            }
+          },
+          "audio_elements": {
+            "score": 50,
+            "confidence": "Medium",
+            "strengths": [],
+            "improvement_areas": []
+          },
+          "narrative_structure": {
+            "score": 50,
+            "confidence": "Medium",
+            "strengths": [],
+            "improvement_areas": []
+          },
+          "pacing_and_flow": {
+            "score": 50,
+            "confidence": "Medium",
+            "insights": "",
+            "editing_pace": {
+              "average_cuts_per_second": 0,
+              "total_cut_count": 0,
+              "pacing_analysis": ""
+            }
+          }
+        },
+        "contradiction_analysis": []
         }
 
         Analysis to convert:
@@ -129,6 +168,21 @@ def generate_structured_output(raw_analysis: str, metadata: Dict[str, Any]) -> D
                 "Hispanic/Latino": 4.2
             }
         }
+        
+        FOCUS ON THESE ADDITIONAL OUTPUTS:
+        1. For content_quality, carefully extract:
+           - Visual elements information including colors, lighting, composition
+           - Audio elements including music, clarity, background noise
+           - Narrative structure and storytelling approach
+           - Pacing analysis including scene transitions and editing rhythm
+
+        2. For emotional_analysis, provide:
+           - Specific emotions detected (joy, sadness, surprise, etc.)
+           - The emotional journey through the video
+           - Estimated emotional impact score (0-100)
+           - Detailed insights on how emotions affect audience engagement
+
+        3. For contradiction_analysis, document any contradictions in the analysis (e.g., conflicting emotions or demographic interpretations)
         
         Remember: Return ONLY the JSON object, no other text."""
 

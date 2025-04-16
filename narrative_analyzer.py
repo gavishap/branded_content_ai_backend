@@ -112,151 +112,246 @@ def clean_json_response(text):
     
     return text
 
-def _build_analysis_prompt():
-    """Builds the analysis prompt template."""
-    return """Analyze this video and provide a structured performance prediction. Format your response as a single JSON object with this structure:
-(there are just example scores, i need u to give ur own)
-{
-    "Performance Metrics": {
-        "Attention Score": "85",
-        "Engagement Potential": "90", 
-        "Watch Time Retention": "75%",
-        "Key Strengths": [
-            "Engaging presenter",
-            "High-quality visuals",
-            "Clear value proposition"
-        ],
-        "Improvement Suggestions": [
-            "Add subtitles or captions",
-            "Incorporate more dynamic transitions",
-            "Optimize thumbnail with clear value proposition"
-        ]
-    },
-    "Demographic Analysis": {
-        "Gender Distribution": {
-            "male": 60.5,
-            "female": 39.5
-        },
-        "Age Distribution": {
-            "0-17": 5.0,
-            "18-24": 25.0,
-            "25-34": 40.0,
-            "35-44": 20.0,
-            "45-64": 8.0,
-            "65+": 2.0
-        },
-        "Ethnicity Distribution": {
-            "caucasian": 45.0,
-            "asian": 25.0,
-            "hispanic": 15.0,
-            "black": 12.0,
-            "middle_eastern": 3.0
-        },
-        "Representation Quality": "The video shows a moderately diverse range of people across different demographics, with somewhat balanced gender representation and moderate ethnic diversity."
-    },
-    "Transcription": {
-        "Full Text": "Complete transcription of all spoken words in the video",
-        "Subtitle Coverage": {
-            "Percentage": "85%",
-            "Missing Segments": [
-                {"start": "1:20", "end": "1:45"},
-                {"start": "3:15", "end": "3:30"}
-            ],
-            "Quality Score": "90",
-            "Issues": [
-                "Some background noise interference",
-                "Unclear pronunciation at 2:15"
-            ]
-        }
+def _build_analysis_prompt(video_url: str, is_url: bool = True, is_url_prompt: bool = None) -> str:
+    """Build the prompt for the video analysis."""
+    
+    # For backward compatibility - if is_url_prompt is provided, use it instead
+    if is_url_prompt is not None:
+        is_url = is_url_prompt
+    
+    # Define the JSON structure template separately to avoid nesting issues
+    json_structure = '''{
+  "analysis": {
+    "Content Analysis": {
+      "Video Format": "",
+      "Setting": "",
+      "Key Events": "",
+      "Audio": "",
+      "Text/Graphics": ""
     },
     "Visual Analysis": {
-        "Color Scheme": {
-            "Dominant Colors": ["#HEXCODE1", "#HEXCODE2"],
-            "Color Mood": "Warm/Cool/Neutral description",
-            "Saturation Level": "0-100 score with analysis",
-            "Contrast Rating": "0-100 score with analysis",
-            "Brand Color Alignment": "How well colors match brand identity"
-        },
-        "Editing Pace": {
-            "Average Cuts Per Second": "e.g. 1 cut every 2.5 seconds",
-            "Total Cut Count": "Approximate number",
-            "Pacing Analysis": "Whether the editing rhythm enhances or detracts from content"
-        },
-        "Thumbnail Analysis": {
-            "thumbnail_optimization": [
-                "Use high contrast colors to stand out in feeds",
-                "Include clear text overlay with value proposition",
-                "Feature close-up of main subject/product",
-                "Ensure readability at small sizes"
-            ]
-        }
+      "Color Palette": "",
+      "Shot Types": "",
+      "Lighting": "",
+      "Visual Style": "",
+      "Visual Quality": ""
     },
     "Product Analysis": {
-        "Featured Products": [
-            {
-                "Name": "Product name",
-                "Screen Time": "Duration in seconds",
-                "Timestamp Ranges": ["0:00-0:15", "1:20-1:45"],
-                "Presentation Quality": "How clearly product is shown/demonstrated"
-            }
-        ]
+      "Featured Product": "",
+      "Brand Elements": "",
+      "Product Presentation": "",
+      "Value Proposition": "",
+      "Call to Action": ""
+    },
+    "Performance Metrics": {
+      "Attention Score": "",
+      "Engagement Potential": "",
+      "Watch Time Retention": "",
+      "Key Strengths": [],
+      "Improvement Suggestions": []
+    },
+    "Demographic Analysis": {
+      "Total People Count": 0,
+      "Gender Distribution": {
+        "male": 0,
+        "female": 0
+      },
+      "Age Distribution": {
+        "0-17": 0,
+        "18-24": 0,
+        "25-34": 0,
+        "35-44": 0,
+        "45-64": 0,
+        "65+": 0
+      },
+      "Ethnicity Distribution": {
+        "caucasian": 0,
+        "black": 0,
+        "hispanic": 0,
+        "asian": 0,
+        "middle_eastern": 0
+      },
+      "Screen Time Distribution": {
+        "main_subjects": 0,
+        "secondary_subjects": 0,
+        "background_appearances": 0
+      },
+      "Representation Quality": ""
     },
     "Detailed Analysis": {
         "In-depth Video Analysis": {
-            "Hook": "The video starts with a strong hook by showcasing the product immediately.",
-            "Editing": "The editing style is smooth and well-paced, with good transitions.",
-            "Tonality": "The presenter's voice is enthusiastic and confident.",
-            "Core Strengths": {
-                "Visuals": "High-quality footage with good lighting and composition",
-                "Content": "Clear and informative presentation of features",
-                "Pacing": "Well-balanced pacing that maintains viewer interest",
-                "Value": "Strong value proposition that resonates with target audience",
-                "CTA": "Clear call-to-action that encourages viewer response"
-            },
+        "Hook": "",
+        "Editing": "",
+        "Tonality": "",
             "Viral Potential": {
-                "Overall": "This video has moderate viral potential, with strengths in visual quality but could improve in emotional impact.",
-                "Scores": {
-                    "Visuals": 82,
-                    "Emotional_Impact": 65,
-                    "Shareability": 78,
-                    "Relatability": 70,
-                    "Uniqueness": 68
-                },
-                "Reasoning": {
-                    "Visuals": "Professional quality visuals with good lighting and composition score well, but lack the highly distinctive style seen in most viral content.",
-                    "Emotional_Impact": "Limited emotional storytelling reduces the likelihood of deep audience connection needed for virality.",
-                    "Shareability": "Content has clear value that viewers would want to share with specific interested parties.",
-                    "Relatability": "The content speaks to common experiences but doesn't create the strong 'that's so me' moment that drives viral sharing.",
-                    "Uniqueness": "While professionally executed, the approach follows familiar patterns seen in similar content."
-                }
-            },
-            "Platform Recommendations": {
-                "Instagram": "Optimize for mobile viewing with clear visuals",
-                "TikTok": "Focus on trending sounds and quick hooks in first 3 seconds",
-                "YouTube Shorts": "Include clear branding and calls to action"
-            }
+          "Visuals": "",
+          "Emotion": "",
+          "Shareability": "",
+          "Relatability": "",
+          "Uniqueness": ""
+        },
+        "Core Strengths": {
+          "Visuals": "",
+          "Content": "",
+          "Pacing": "",
+          "Value": "",
+          "CTA": ""
         }
+      }
     }
-}
+  }
+}'''
+    
+    prompt = ""
+    if is_url:
+        prompt = f"""Analyze this video: {video_url}
+
+Your task is to provide a comprehensive analysis of this video advertisement. 
+Focus on its characteristics, appeal, and marketing effectiveness.
+
+Break down your analysis into these sections:
+1. Content Analysis: Briefly describe what's happening in the video
+2. Visual Analysis: Describe the predominant colors, shot types, lighting, and visual style
+3. Product Analysis: Identify the featured product or service and how it's presented
+4. Performance Metrics Prediction: Provide potential scores for attention, engagement, and retention
+5. Demographic Analysis: Analyze the demographic representation in the video
+6. Detailed Observations: Provide specific insights across multiple dimensions
+
+For the Content Analysis section:
+- Video Format: Identify what type of advertisement format this is.
+- Setting: Describe where the video takes place. 
+- Key Events: Summarize the main action or narrative arc.
+- Audio: Describe the use of music, voice, sound effects.
+- Text/Graphics: Note any on-screen text or graphics.
+
+For the Visual Analysis section:
+- Color Palette: Identify the main colors and their emotional impact.
+- Shot Types: Describe the predominant shot types (close-ups, wide shots, etc.).
+- Lighting: Analyze the lighting style and mood it creates.
+- Visual Style: Comment on the overall aesthetic approach.
+- Visual Quality: Assess the production value and visual clarity.
+
+For the Product Analysis section:
+- Featured Product: Name and describe the main product or service.
+- Brand Elements: Identify logos, slogans, or distinctive brand markers.
+- Product Presentation: How is the product showcased? Is it demonstrated?
+- Value Proposition: What benefits or solutions does the product appear to offer?
+- Call to Action: Is there a clear CTA? What is the viewer prompted to do?
+
+For the Performance Metrics Prediction section:
+- Attention Score (0-100): How likely is this to capture viewer attention in the first few seconds?
+- Engagement Potential (0-100): How likely is this to maintain viewer interest throughout?
+- Watch Time Retention (0-100%): What percentage of viewers would likely watch the entire video?
+- Key Strengths: List 3-5 elements that would drive positive performance.
+- Improvement Suggestions: List 3-5 potential changes that could enhance performance.
 
 For the Demographic Analysis section:
-- Gender Distribution: Analyze the gender presentation of people appearing in the video with percentage values. Only use male and female categories, with percentages that add up to 100%.
-- Age Distribution: Categorize the approximate ages of people in the video across standard age ranges.
-- Ethnicity Distribution: Estimate the ethnicity representation in the video.
+- Total People Count: Count and provide the EXACT number of ALL people that appear in the video, even if just briefly or in the background.
+- Gender Distribution: Analyze how much of the video's screen time is populated by male faces vs. female faces (not the count of people, but their presence throughout the video). Only use male and female categories, with percentages that add up to 100%.
+- Age Distribution: Analyze the distribution of screen time across age groups throughout the video (0-17, 18-24, 25-34, 35-44, 45-64, 65+). Focus on how much of the video features each age group, not just counting individuals. Percentages should add up to 100%.
+- Ethnicity Distribution: Analyze the distribution of screen time across different ethnicities throughout the video. Focus on specific ethnicities (caucasian, black, hispanic, asian, middle_eastern) without using mixed or other categories. Report what percentage of the video's screen time features each ethnicity. Percentages should add up to 100%.
+- Screen Time Distribution: For videos with multiple people, calculate what percentage of total video screen time is given to main subjects, secondary subjects, and background appearances. Percentages should add up to 100%.
 - Representation Quality: Provide an assessment of overall demographic diversity and representation.
 
-Ensure all demographic percentages are numerical values (not text descriptions) that add up to 100 for each category.
+For the Detailed Analysis section, include "In-depth Video Analysis" with these subsections:
+- Hook: Analyze the opening seconds and how effectively they grab attention.
+- Editing: Comment on pacing, transitions, and overall editing style.
+- Tonality: Describe the emotional tone and mood of the advertisement.
+- Viral Potential: Rate each aspect on a scale of 0-100:
+  * Visuals: Are they striking, unique, or highly appealing?
+  * Emotion: Does it evoke strong emotional responses?
+  * Shareability: Would viewers want to share this content?
+  * Relatability: How well would the target audience connect with this?
+  * Uniqueness: How different is this from typical ads in its category?
+- Core Strengths: Identify the strongest aspects in these categories:
+  * Visuals: What visual elements stand out positively?
+  * Content: What content elements are most compelling?
+  * Pacing: How well is the timing and rhythm executed?
+  * Value: How clearly is the value proposition conveyed?
+  * CTA: How effectively is the call to action presented?
 
-For the Viral Potential section, carefully evaluate each component on a scale of 0-100 based on established research:
-- Visuals: Assess visual quality, composition, color psychology, and whether it stands out in a social feed
-- Emotional_Impact: Evaluate how strongly it triggers emotions like joy, surprise, inspiration or outrage
-- Shareability: Analyze why viewers would want to share this (social currency, practical value, etc.)
-- Relatability: Measure how well it connects with audience experiences or aspirations
-- Uniqueness: Assess how differentiated it is from similar content in the same category
+Organize your analysis to be detailed and insightful, while remaining objective. Use specific video timestamps and elements to support your observations.
 
-Your detailed reasoning should be based on analysis of viral video trends and research but won't be shown to users.
+Use JSON format for your response. Here's the structure:
+{json_structure}
 
-IMPORTANT: Return ONLY the JSON object, no additional text or markdown formatting. Ensure all fields have detailed, specific descriptions rather than generic statements."""
+Ensure all demographic percentages add up to exactly 100% in each category. For Total People Count, provide an actual number, not a percentage.
+"""
+    else:
+        prompt = f"""Analyze the previously uploaded video.
+
+Your task is to provide a comprehensive analysis of this video advertisement. 
+Focus on its characteristics, appeal, and marketing effectiveness.
+
+Break down your analysis into these sections:
+1. Content Analysis: Briefly describe what's happening in the video
+2. Visual Analysis: Describe the predominant colors, shot types, lighting, and visual style
+3. Product Analysis: Identify the featured product or service and how it's presented
+4. Performance Metrics Prediction: Provide potential scores for attention, engagement, and retention
+5. Demographic Analysis: Analyze the demographic representation in the video
+6. Detailed Observations: Provide specific insights across multiple dimensions
+
+For the Content Analysis section:
+- Video Format: Identify what type of advertisement format this is.
+- Setting: Describe where the video takes place. 
+- Key Events: Summarize the main action or narrative arc.
+- Audio: Describe the use of music, voice, sound effects.
+- Text/Graphics: Note any on-screen text or graphics.
+
+For the Visual Analysis section:
+- Color Palette: Identify the main colors and their emotional impact.
+- Shot Types: Describe the predominant shot types (close-ups, wide shots, etc.).
+- Lighting: Analyze the lighting style and mood it creates.
+- Visual Style: Comment on the overall aesthetic approach.
+- Visual Quality: Assess the production value and visual clarity.
+
+For the Product Analysis section:
+- Featured Product: Name and describe the main product or service.
+- Brand Elements: Identify logos, slogans, or distinctive brand markers.
+- Product Presentation: How is the product showcased? Is it demonstrated?
+- Value Proposition: What benefits or solutions does the product appear to offer?
+- Call to Action: Is there a clear CTA? What is the viewer prompted to do?
+
+For the Performance Metrics Prediction section:
+- Attention Score (0-100): How likely is this to capture viewer attention in the first few seconds?
+- Engagement Potential (0-100): How likely is this to maintain viewer interest throughout?
+- Watch Time Retention (0-100%): What percentage of viewers would likely watch the entire video?
+- Key Strengths: List 3-5 elements that would drive positive performance.
+- Improvement Suggestions: List 3-5 potential changes that could enhance performance.
+
+For the Demographic Analysis section:
+- Total People Count: Count and provide the EXACT number of ALL people that appear in the video, even if just briefly or in the background.
+- Gender Distribution: Analyze how much of the video's screen time is populated by male faces vs. female faces (not the count of people, but their presence throughout the video). Only use male and female categories, with percentages that add up to 100%.
+- Age Distribution: Analyze the distribution of screen time across age groups throughout the video (0-17, 18-24, 25-34, 35-44, 45-64, 65+). Focus on how much of the video features each age group, not just counting individuals. Percentages should add up to 100%.
+- Ethnicity Distribution: Analyze the distribution of screen time across different ethnicities throughout the video. Focus on specific ethnicities (caucasian, black, hispanic, asian, middle_eastern) without using mixed or other categories. Report what percentage of the video's screen time features each ethnicity. Percentages should add up to 100%.
+- Screen Time Distribution: For videos with multiple people, calculate what percentage of total video screen time is given to main subjects, secondary subjects, and background appearances. Percentages should add up to 100%.
+- Representation Quality: Provide an assessment of overall demographic diversity and representation.
+
+For the Detailed Analysis section, include "In-depth Video Analysis" with these subsections:
+- Hook: Analyze the opening seconds and how effectively they grab attention.
+- Editing: Comment on pacing, transitions, and overall editing style.
+- Tonality: Describe the emotional tone and mood of the advertisement.
+- Viral Potential: Rate each aspect on a scale of 0-100:
+  * Visuals: Are they striking, unique, or highly appealing?
+  * Emotion: Does it evoke strong emotional responses?
+  * Shareability: Would viewers want to share this content?
+  * Relatability: How well would the target audience connect with this?
+  * Uniqueness: How different is this from typical ads in its category?
+- Core Strengths: Identify the strongest aspects in these categories:
+  * Visuals: What visual elements stand out positively?
+  * Content: What content elements are most compelling?
+  * Pacing: How well is the timing and rhythm executed?
+  * Value: How clearly is the value proposition conveyed?
+  * CTA: How effectively is the call to action presented?
+
+Organize your analysis to be detailed and insightful, while remaining objective. Use specific video timestamps and elements to support your observations.
+
+Use JSON format for your response. Here's the structure:
+{json_structure}
+
+Ensure all demographic percentages add up to exactly 100% in each category. For Total People Count, provide an actual number, not a percentage.
+"""
+    return prompt
 
 def extract_json_from_response(response_text):
     """Extracts and validates JSON from the response text."""
@@ -413,7 +508,7 @@ def analyze_video_with_gemini(path_or_url, is_url_prompt=False, max_retries=3, i
                         types.Content(
                             role="user",
                             parts=[
-                                types.Part.from_text(text=_build_analysis_prompt()),
+                                types.Part.from_text(text=_build_analysis_prompt(path_or_url, is_url_prompt=False)),
                             ],
                         ),
                     ]
@@ -506,7 +601,7 @@ def analyze_video_with_gemini(path_or_url, is_url_prompt=False, max_retries=3, i
                     types.Content(
                         role="user",
                         parts=[
-                            types.Part.from_text(text=_build_analysis_prompt()),
+                            types.Part.from_text(text=_build_analysis_prompt(path_or_url, is_url_prompt=True)),
                         ],
                     ),
                 ]

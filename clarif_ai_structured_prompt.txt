@@ -34,6 +34,30 @@ Summarize what the video depicts based on the concept and object frequencies. Wh
 
 ---
 
+## Visual Elements Analysis
+Analyze the visual quality and elements detected in the video. Identify the color scheme based on objects and concepts mentioned. Estimate dominant colors with hex codes (e.g. #FF0000 for red) based on objects detected. Assess lighting quality, composition, visual clarity. Rate the overall visual quality on a scale of 0-100.
+
+Format this section in a structured way with these subsections:
+- **Visual Elements Score:** 0-100
+- **Color Scheme:** List of dominant colors with hex codes and mood description
+- **Lighting Quality:** Description and rating 0-100
+- **Composition:** Analysis of framing, balance, and focus
+- **Visual Strengths:** List of 2-4 visual elements done well
+- **Visual Improvement Areas:** List of 2-4 areas that could be enhanced
+
+---
+
+## Audio Elements Analysis
+Based on the concepts detected, estimate the likely audio elements in the video. Is there likely music, speech, sound effects, or silence? Rate the probable audio quality on a scale of 0-100.
+
+Format this section with:
+- **Audio Elements Score:** 0-100
+- **Audio Type:** Likely audio elements (music, speech, etc.)
+- **Audio Strengths:** 1-2 likely strengths
+- **Audio Improvement Areas:** 1-2 potential improvements
+
+---
+
 ## Demographic Representation  
 Analyze the gender, age, and ethnicity distribution. Is the cast diverse or homogenous? Which groups dominate screen time? Comment on representation quality (e.g., inclusive, skewed, targeted). Explain how this may influence audience connection and perception.
 
@@ -62,6 +86,34 @@ Your demographic data will be used to generate charts and visualizations, so tex
 ## Emotional Tone and Expression  
 Describe the overall emotion of the video. Use the sentiment breakdown to explain the emotional arc. Highlight which expressions dominate (smiles, surprise, seriousness, etc.) and how they contribute to emotional engagement or relatability. Indicate how these may affect viewer retention or virality.
 
+Also include:
+- **Dominant Emotions:** List the top 2-3 emotions with percentages
+- **Emotional Arc:** Describe how emotions likely change throughout the video
+- **Emotional Resonance Score:** Rate 0-100 how strongly the content elicits emotional response
+- **Emotional Impact Insights:** 2-3 sentences on how emotions affect audience engagement
+
+---
+
+## Narrative Structure Analysis
+Analyze the story structure and flow of the video based on concepts and objects detected. Does it appear to follow a clear narrative arc? Is there a hook, build-up, and conclusion?
+
+Include:
+- **Narrative Structure Score:** 0-100
+- **Storytelling Approach:** Description of the likely story structure
+- **Narrative Strengths:** 1-2 likely strengths
+- **Narrative Improvement Areas:** 1-2 potential improvements
+
+---
+
+## Pacing and Flow Analysis
+Estimate the pacing of the video based on concepts and their distribution. Is it likely fast-paced with many cuts or slow and deliberate?
+
+Include:
+- **Pacing Score:** 0-100
+- **Editing Style:** Description of likely editing approach
+- **Estimated Cuts:** Approximate number of scene changes
+- **Pacing Insights:** 1-2 sentences on how pacing affects engagement
+
 ---
 
 ## Quantified Performance Metrics  
@@ -71,6 +123,8 @@ Using heuristic, research-backed reasoning, **assign scores for the following me
 - **CTR Potential**  
 - **Shareability**  
 - **Retention Score**  
+- **Hook Score** (how effectively it grabs attention in first few seconds)
+- **Emotional Impact**
 - **Virality Index** (Low / Medium / High)  
 - **Representation Index**  
 - **Audience Match Score**:  
@@ -99,6 +153,12 @@ Follow with brief reasoning (1–3 sentences per metric)
 ## Predicted Audience Fit  
 Describe who this video is most likely to resonate with. Reference age, gender, ethnicity, or platform-specific traits. For example: "This content will likely perform well among Millennial women interested in beauty and wellness" or "Due to high professionalism and neutral tone, this fits better on LinkedIn than TikTok."
 
+Also include a detailed platform fit assessment:
+- **Instagram Fit:** 0-100 with 1 sentence explanation
+- **TikTok Fit:** 0-100 with 1 sentence explanation
+- **YouTube Fit:** 0-100 with 1 sentence explanation
+- **Facebook Fit:** 0-100 with 1 sentence explanation
+
 ---
 
 ## Recommendations for Optimization  
@@ -112,6 +172,11 @@ Suggest **practical improvements** to maximize social media performance. Recomme
 - **Engagement Triggers**: Ideas like reactions, humor, text overlays, or calls-to-action  
 
 If the video is already strong, state what's working and encourage consistency. End with an encouraging, confident tone.
+
+---
+
+## Contradiction Analysis
+Identify any potential contradictions or inconsistencies in your analysis. For example, if you detect both "happiness" and "sadness" emotions in high percentages, or if the objects and concepts seem mismatched, address these contradictions and explain how you've reconciled them in your analysis.
 
 ---
 

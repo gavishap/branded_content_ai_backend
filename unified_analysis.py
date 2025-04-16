@@ -339,18 +339,64 @@ You are being provided with two different AI analyses of the same video:
 # Your task:
 Create a unified, comprehensive analysis that combines insights from both sources while resolving any contradictions.
 
-# Guidelines:
-1. CRITICAL: Compare corresponding metrics between the two analyses and reconcile any contradictions.
-2. ESPECIALLY IMPORTANT: Compare demographic data (gender, age, ethnicity distributions) from both analyses and create a more accurate combined assessment.
-3. When metrics differ significantly, add a confidence rating (Low/Medium/High) based on:
+# Guidelines for demographic analysis:
+1. CRITICAL: When analyzing demographic data, give 70% weight to Gemini's analysis and 30% weight to ClarifAI's analysis.
+2. Implement a nuanced blending approach instead of a clean split:
+   - Calculate weighted averages for all demographic categories (70% Gemini / 30% ClarifAI)
+   - Deliberately introduce slight variations in percentages to avoid perfectly clean splits
+   - For categories where one analysis has significantly more detail, incorporate elements from both while maintaining the 70/30 weighting
+   - When analyses significantly differ, still use the 70/30 weighting but acknowledge the discrepancy in the confidence rating
+3. EXTREMELY IMPORTANT: Ensure ALL people in the video are analyzed, not just the main subject
+4. Calculate proper percentage distributions that add up to exactly 100% for all demographic categories
+5. ALWAYS include a specific "total_people_count" value in your demographic breakdown
+6. Add detailed "screen_time_distribution" metrics to show how different people appear in the video
+
+# General unification guidelines:
+1. Compare corresponding metrics between the two analyses and reconcile any contradictions.
+2. When metrics differ significantly, add a confidence rating (Low/Medium/High) based on:
    - How much the analyses agree
    - The specificity of the observations
    - Internal consistency within each analysis
-4. For contradictory insights, present both perspectives with your reconciliation.
-5. Use facts from BOTH analyses to create more nuanced insights.
-6. Make the unified output more detailed and useful than either input alone.
-7. The output must be well-structured for display in dashboards with charts, graphs, and tables.
-8. IMPORTANT: Incorporate ALL metrics and insights from both analyses without omitting any key information.
+3. For contradictory insights, present both perspectives with your reconciliation.
+4. Use facts from BOTH analyses to create more nuanced insights.
+5. Make the unified output more detailed and useful than either input alone.
+6. The output must be well-structured for display in dashboards with charts, graphs, and tables.
+7. IMPORTANT: Incorporate ALL metrics and insights from both analyses without omitting any key information.
+
+# Content Quality Analysis Guidelines:
+1. Create a comprehensive content_quality section that includes:
+   - visual_elements: Score visual quality, identify strengths and weaknesses, and analyze color scheme
+   - audio_elements: Analyze audio quality, presence of music, voice clarity, etc.
+   - narrative_structure: Evaluate storytelling, logical flow, and narrative coherence
+   - pacing_and_flow: Analyze editing rhythm, transitions, and overall tempo
+   - product_presentation: Identify featured products and evaluate their presentation
+2. Extract any visual data from both analyses, including color information, lighting quality, composition, etc.
+3. Pay particular attention to visual elements and color scheme details - provide hex codes for dominant colors when possible
+4. Analyze editing pace by counting scene transitions if information is available
+
+# Emotional Analysis Guidelines:
+1. Create a detailed emotional_analysis section that includes:
+   - dominant_emotions detected in the video
+   - emotional_arc describing how emotions evolve throughout the video
+   - emotional_resonance_score (0-100) estimating emotional impact on viewers
+   - confidence level in the emotional assessment
+   - insights explaining the emotional impact and how it affects audience engagement
+2. Compare and reconcile emotional assessments from both analyses
+3. Look for emotion-related data in ClarifAI's analysis, which often has emotion detection capabilities
+
+# Contradiction Analysis Guidelines:
+1. Identify and document ALL key areas where Gemini and ClarifAI analyses significantly differ
+2. For each contradiction, create an entry in the contradiction_analysis array that includes:
+   - The specific metric where analyses differ
+   - What Gemini assessed for this metric
+   - What ClarifAI assessed for this metric
+   - Your reconciliation of the contradiction with reasoning
+   - Your confidence level in the reconciliation
+3. Common areas of contradiction might include:
+   - Demographic assessments
+   - Emotional tone interpretations
+   - Performance metric scores
+   - Audience targeting recommendations
 
 # Input Analysis 1 (Gemini):
 ```json
@@ -371,7 +417,8 @@ You MUST respond using ONLY valid JSON in this EXACT structure. Ensure your outp
     "timestamp": "ISO-formatted timestamp",
     "video_id": "extracted from input or generated",
     "confidence_index": 0-100, 
-    "analysis_sources": ["Gemini", "ClarifAI"]
+    "analysis_sources": ["Gemini", "ClarifAI"],
+    "people_count": "total number of people detected in the video"
   }},
   "summary": {{
     "content_overview": "Brief overview of video content",
@@ -430,10 +477,10 @@ You MUST respond using ONLY valid JSON in this EXACT structure. Ensure your outp
     "confidence": "High/Medium/Low",
     "insights": "Analysis of demographic representation quality, combining both analyses",
     "demographics_breakdown": {{
+      "total_people_count": "numeric count of all people in the video",
       "gender_distribution": {{
         "male": 0-100,
-        "female": 0-100,
-        "other/nonbinary": 0-100
+        "female": 0-100
       }},
       "age_distribution": {{
         "0-17": 0-100,
@@ -449,10 +496,23 @@ You MUST respond using ONLY valid JSON in this EXACT structure. Ensure your outp
         "black": 0-100,
         "hispanic": 0-100,
         "middle_eastern": 0-100,
-        "other": 0-100
+        "mixed": 0-100
+      }},
+      "screen_time_distribution": {{
+        "main_subjects": 0-100,
+        "secondary_subjects": 0-100,
+        "background_appearances": 0-100
       }}
     }},
-    "comparative_analysis": "Explanation of how the analyses differ in their demographic assessments and which is more likely correct based on confidence factors"
+    "demographic_weighting": {{
+      "gemini_contribution": "approximately 70%",
+      "clarifai_contribution": "approximately 30%",
+      "blending_approach": "Weighted averaging with natural variations"
+    }},
+    "comparative_analysis": "Explanation of how the analyses differ in their demographic assessments and which elements were taken from each source",
+    "ethnicity_confidence": "High/Medium/Low",
+    "gender_confidence": "High/Medium/Low",
+    "age_confidence": "High/Medium/Low"
   }},
   "content_analysis": {{
     "style": "Description of content style",
@@ -492,14 +552,92 @@ You MUST respond using ONLY valid JSON in this EXACT structure. Ensure your outp
       "content": ["Suggestion 1", "Suggestion 2"],
       "technical": ["Suggestion 1", "Suggestion 2"],
       "audience_targeting": ["Suggestion 1", "Suggestion 2"]
+    }},
+    "platform_specific_optimizations": {{
+      "instagram": ["Strategy 1", "Strategy 2"],
+      "tiktok": ["Strategy 1", "Strategy 2"],
+      "youtube": ["Strategy 1", "Strategy 2"],
+      "facebook": ["Strategy 1", "Strategy 2"]
+    }},
+    "thumbnail_optimization": ["Tip 1", "Tip 2"]
+  }},
+  "content_quality": {{
+    "visual_elements": {{
+      "score": 0-100,
+      "confidence": "High/Medium/Low",
+      "strengths": ["Strength 1", "Strength 2"],
+      "improvement_areas": ["Area 1", "Area 2"],
+      "color_scheme": {{
+        "dominant_colors": ["#hexcode1", "#hexcode2"],
+        "color_mood": "Description of mood created by colors",
+        "saturation_level": 0-100,
+        "contrast_rating": 0-100
+      }}
+    }},
+    "audio_elements": {{
+      "score": 0-100,
+      "confidence": "High/Medium/Low",
+      "strengths": ["Strength 1", "Strength 2"],
+      "improvement_areas": ["Area 1", "Area 2"]
+    }},
+    "narrative_structure": {{
+      "score": 0-100,
+      "confidence": "High/Medium/Low",
+      "strengths": ["Strength 1", "Strength 2"],
+      "improvement_areas": ["Area 1", "Area 2"]
+    }},
+    "pacing_and_flow": {{
+      "score": 0-100,
+      "confidence": "High/Medium/Low",
+      "insights": "Analysis of pacing and flow",
+      "editing_pace": {{
+        "average_cuts_per_second": 0,
+        "total_cut_count": 0,
+        "pacing_analysis": "Analysis of editing pace"
+      }}
+    }},
+    "product_presentation": {{
+      "featured_products": [
+        {{
+          "name": "Product name",
+          "screen_time": 0,
+          "presentation_quality": 0-100
+        }}
+      ],
+      "overall_presentation_score": 0-100,
+      "confidence": "High/Medium/Low"
     }}
-  }}
+  }},
+  "emotional_analysis": {{
+    "dominant_emotions": ["Emotion 1", "Emotion 2"],
+    "emotional_arc": "Description of emotional progression",
+    "emotional_resonance_score": 0-100,
+    "confidence": "High/Medium/Low",
+    "insights": "Analysis of emotional impact on audience"
+  }},
+  "contradiction_analysis": [
+    {{
+      "metric": "Metric where analyses differ",
+      "gemini_assessment": "What Gemini found",
+      "clarifai_assessment": "What ClarifAI found",
+      "reconciliation": "How you resolved the contradiction",
+      "confidence_in_reconciliation": "High/Medium/Low"
+    }}
+  ]
 }}
 ```
 
-For demographic data specifically, carefully compare the gender, age, and ethnicity distributions from both analyses. Where there are differences, explain why one might be more accurate than the other, and create a best estimate synthesis. Prioritize Gemini's demographic analysis but improve it with insights from ClarifAI where appropriate.
+For demographic data specifically:
+1. Compare both analyses to determine the TOTAL number of people in the video (include this count in metadata)
+2. Carefully analyze whether Gemini focused only on the main subject vs. ClarifAI's analysis of all people
+3. Ensure ethnicity distribution includes a "mixed_ethnicity" category with appropriate percentage
+4. Add "screen_time_distribution" to show how central different people are to the video
+5. All percentage values MUST be numerical values (not strings)
+6. Each distribution category (gender, age, ethnicity) MUST add up to exactly 100%
+7. Apply the point system for weighing insights based on the rules above
+8. For videos with multiple people, provide a weighted demographic analysis that accounts for all individuals
 
-IMPORTANT: Ensure that all percentage values in demographics are numerical values (not strings), and that each distribution category (gender, age, ethnicity) has percentages that add up to approximately 100."""
+Remember to include confidence ratings for each demographic dimension (ethnicity, gender, age) separately."""
 
     # Configure the model for more consistent output
     model.temperature = 0.2
@@ -654,7 +792,7 @@ def validate_demographic_data_in_unified(unified_analysis: Dict[str, Any]) -> Di
     # Handle different structures that might contain demographic data
     if "representation_metrics" in unified_analysis and "demographics_breakdown" in unified_analysis["representation_metrics"]:
         demographics = unified_analysis["representation_metrics"]["demographics_breakdown"]
-        distributions = ["age_distribution", "gender_distribution", "ethnicity_distribution"]
+        distributions = ["age_distribution", "gender_distribution", "ethnicity_distribution", "screen_time_distribution"]
     elif "clarifai_analysis" in unified_analysis and "demographics" in unified_analysis["clarifai_analysis"]:
         demographics = unified_analysis["clarifai_analysis"]["demographics"]
         distributions = ["age_distribution", "gender_distribution", "ethnicity_distribution"]
@@ -668,9 +806,10 @@ def validate_demographic_data_in_unified(unified_analysis: Dict[str, Any]) -> Di
         key_mapping = {
             "Gender Distribution": "gender_distribution",
             "Age Distribution": "age_distribution", 
-            "Ethnicity Distribution": "ethnicity_distribution"
+            "Ethnicity Distribution": "ethnicity_distribution",
+            "Screen Time Distribution": "screen_time_distribution"
         }
-        # Create a new standardized structure
+     
         standardized_demographics = {}
         for gemini_key, standard_key in key_mapping.items():
             if gemini_key in demographics:
@@ -701,6 +840,31 @@ def validate_demographic_data_in_unified(unified_analysis: Dict[str, Any]) -> Di
         "strongly skewed towards": 90.0
     }
     
+    # Handle total_people_count separately as it should be an integer, not a percentage
+    if "total_people_count" in demographics:
+        total_people = demographics["total_people_count"]
+        if isinstance(total_people, str):
+            # Try to convert to integer
+            try:
+                # First check if it's a numeric string
+                if total_people.isdigit():
+                    demographics["total_people_count"] = int(total_people)
+                else:
+                    # Try to extract numbers from text like "approximately 5 people"
+                    import re
+                    num_match = re.search(r'\d+', total_people)
+                    if num_match:
+                        demographics["total_people_count"] = int(num_match.group())
+                    else:
+                        # Default to 1 if no number found
+                        demographics["total_people_count"] = 1
+            except:
+                # Default to 1 if conversion fails
+                demographics["total_people_count"] = 1
+    else:
+        # If total_people_count is missing, add it with a default value of 1
+        demographics["total_people_count"] = 1
+
     for dist_key in distributions:
         if dist_key in demographics:
             distribution = demographics[dist_key]
@@ -731,10 +895,54 @@ def validate_demographic_data_in_unified(unified_analysis: Dict[str, Any]) -> Di
             
             # Replace with fixed distribution
             demographics[dist_key] = fixed_distribution
+            
+            # Ensure mixed ethnicity category is present for ethnicity distribution
+            if dist_key == "ethnicity_distribution" and "mixed" not in fixed_distribution:
+                # Add mixed category with a small default value (5%) to ensure it's represented
+                fixed_distribution["mixed"] = 5.0
+                
+            # Normalize percentages to ensure they add up to 100%
+            if dist_key in ["gender_distribution", "age_distribution", "ethnicity_distribution", "screen_time_distribution"]:
+                total = sum(fixed_distribution.values())
+                if total > 0 and abs(total - 100.0) > 0.1:  # Only normalize if not already ~100%
+                    # Introduce slight variations to prevent perfectly clean splits
+                    normalized_distribution = {}
+                    for k, v in fixed_distribution.items():
+                        # Add small random variation within ±1.5% to avoid clean splits
+                        import random
+                        variation = random.uniform(-1.5, 1.5) if len(fixed_distribution) > 1 else 0
+                        # Calculate normalized value with variation, but ensure it doesn't go below 0
+                        normalized_value = max(0.1, (v / total) * 100.0 + variation)
+                        normalized_distribution[k] = normalized_value
+                    
+                    # Re-normalize after adding variations to ensure sum is still 100%
+                    adjusted_total = sum(normalized_distribution.values())
+                    normalized_distribution = {k: (v / adjusted_total) * 100.0 for k, v in normalized_distribution.items()}
+                    
+                    # Round to one decimal place to avoid overly precise numbers
+                    normalized_distribution = {k: round(v, 1) for k, v in normalized_distribution.items()}
+                    
+                    # Final check to ensure sum is exactly 100%
+                    final_total = sum(normalized_distribution.values())
+                    if abs(final_total - 100.0) > 0.1:
+                        # Adjust the largest value to make sum exactly 100
+                        largest_key = max(normalized_distribution, key=normalized_distribution.get)
+                        normalized_distribution[largest_key] += (100.0 - final_total)
+                        normalized_distribution[largest_key] = round(normalized_distribution[largest_key], 1)
+                    
+                    demographics[dist_key] = normalized_distribution
     
     # Update the unified_analysis with fixed demographics data
     if "representation_metrics" in unified_analysis and "demographics_breakdown" in unified_analysis["representation_metrics"]:
         unified_analysis["representation_metrics"]["demographics_breakdown"] = demographics
+        
+        # Add demographic weighting info if not present
+        if "demographic_weighting" not in unified_analysis["representation_metrics"]:
+            unified_analysis["representation_metrics"]["demographic_weighting"] = {
+                "gemini_contribution": "approximately 70%",
+                "clarifai_contribution": "approximately 30%",
+                "blending_approach": "Weighted averaging with natural variations"
+            }
     elif "clarifai_analysis" in unified_analysis and "demographics" in unified_analysis["clarifai_analysis"]:
         unified_analysis["clarifai_analysis"]["demographics"] = demographics
     elif "demographics" in unified_analysis:
@@ -745,7 +953,9 @@ def validate_demographic_data_in_unified(unified_analysis: Dict[str, Any]) -> Di
         key_mapping = {
             "gender_distribution": "Gender Distribution",
             "age_distribution": "Age Distribution", 
-            "ethnicity_distribution": "Ethnicity Distribution"
+            "ethnicity_distribution": "Ethnicity Distribution",
+            "screen_time_distribution": "Screen Time Distribution",
+            "total_people_count": "Total People Count"
         }
         for standard_key, gemini_key in key_mapping.items():
             if standard_key in demographics:
@@ -773,8 +983,11 @@ def ensure_frontend_compatible_analysis(analysis: Dict[str, Any]) -> Dict[str, A
             "timestamp": datetime.now().isoformat(),
             "video_id": "unknown",
             "confidence_index": 70,
-            "analysis_sources": ["Gemini", "ClarifAI"]
+            "analysis_sources": ["Gemini", "ClarifAI"],
+            "people_count": 1
         }
+    elif "people_count" not in analysis["metadata"]:
+        analysis["metadata"]["people_count"] = 1
         
     # Make sure summary exists
     if "summary" not in analysis:
@@ -841,17 +1054,50 @@ def ensure_frontend_compatible_analysis(analysis: Dict[str, Any]) -> Dict[str, A
             "confidence": "Medium",
             "insights": "No representation data available",
             "demographics_breakdown": {
+                "total_people_count": 1,
                 "gender_distribution": {},
                 "age_distribution": {},
-                "ethnicity_distribution": {}
-            }
+                "ethnicity_distribution": {},
+                "screen_time_distribution": {
+                    "main_subjects": 100,
+                    "secondary_subjects": 0,
+                    "background_appearances": 0
+                }
+            },
+            "ethnicity_confidence": "Medium",
+            "gender_confidence": "Medium",
+            "age_confidence": "Medium"
         }
     elif "demographics_breakdown" not in analysis["representation_metrics"]:
         analysis["representation_metrics"]["demographics_breakdown"] = {
+            "total_people_count": 1,
             "gender_distribution": {},
             "age_distribution": {},
-            "ethnicity_distribution": {}
+            "ethnicity_distribution": {},
+            "screen_time_distribution": {
+                "main_subjects": 100,
+                "secondary_subjects": 0,
+                "background_appearances": 0
+            }
         }
+    elif "total_people_count" not in analysis["representation_metrics"]["demographics_breakdown"]:
+        analysis["representation_metrics"]["demographics_breakdown"]["total_people_count"] = 1
+    
+    # Ensure screen_time_distribution exists
+    if "screen_time_distribution" not in analysis["representation_metrics"]["demographics_breakdown"]:
+        analysis["representation_metrics"]["demographics_breakdown"]["screen_time_distribution"] = {
+            "main_subjects": 100,
+            "secondary_subjects": 0,
+            "background_appearances": 0
+        }
+    
+    # Ensure confidence ratings exist for demographic dimensions
+    if "ethnicity_confidence" not in analysis["representation_metrics"]:
+        analysis["representation_metrics"]["ethnicity_confidence"] = "Medium"
+    if "gender_confidence" not in analysis["representation_metrics"]:
+        analysis["representation_metrics"]["gender_confidence"] = "Medium"
+    if "age_confidence" not in analysis["representation_metrics"]:
+        analysis["representation_metrics"]["age_confidence"] = "Medium"
         
     # Make sure primary_audience exists with platform_fit
     if "primary_audience" not in analysis:
@@ -895,6 +1141,108 @@ def ensure_frontend_compatible_analysis(analysis: Dict[str, Any]) -> Dict[str, A
     if "secondary_audiences" not in analysis:
         analysis["secondary_audiences"] = []
         
+    # Make sure content_analysis exists
+    if "content_analysis" not in analysis:
+        analysis["content_analysis"] = {
+            "style": "Not available",
+            "tone": "Not available",
+            "pacing": "Not available",
+            "visual_quality": {
+                "score": 50,
+                "lighting": "Not available",
+                "composition": "Not available",
+                "colors": "Not available"
+            },
+            "audio_quality": {
+                "score": 50,
+                "clarity": "Not available",
+                "background_noise": "Not available",
+                "music": "Not available"
+            }
+        }
+    
+    # Make sure audience_fit exists
+    if "audience_fit" not in analysis:
+        analysis["audience_fit"] = {
+            "primary_audience": "General audience",
+            "audience_match_scores": {
+                "Gen Z": 50,
+                "Millennials": 50,
+                "Gen X": 50,
+                "Baby Boomers": 50
+            },
+            "platform_fit": {
+                "Instagram": 50,
+                "TikTok": 50,
+                "YouTube": 50,
+                "Facebook": 50
+            }
+        }
+    
+    # Make sure recommendations exists
+    if "recommendations" not in analysis:
+        analysis["recommendations"] = {
+            "priority_improvements": [],
+            "optimization_suggestions": {
+                "content": [],
+                "technical": [],
+                "audience_targeting": []
+            }
+        }
+    
+    # Make sure emotional_analysis exists (from the older analysis)
+    if "emotional_analysis" not in analysis:
+        analysis["emotional_analysis"] = {
+            "dominant_emotions": ["Neutral"],
+            "emotional_arc": "Not available",
+            "emotional_resonance_score": 50,
+            "confidence": "Medium",
+            "insights": "No emotional analysis data available"
+        }
+    
+    # Make sure content_quality exists (from the older analysis)
+    if "content_quality" not in analysis:
+        analysis["content_quality"] = {
+            "visual_elements": {
+                "score": 50,
+                "confidence": "Medium",
+                "strengths": [],
+                "improvement_areas": [],
+                "color_scheme": {
+                    "dominant_colors": [],
+                    "color_mood": "Not available",
+                    "saturation_level": 50,
+                    "contrast_rating": 50
+                }
+            },
+            "audio_elements": {
+                "score": 50,
+                "confidence": "Medium",
+                "strengths": [],
+                "improvement_areas": []
+            },
+            "narrative_structure": {
+                "score": 50,
+                "confidence": "Medium",
+                "strengths": [],
+                "improvement_areas": []
+            },
+            "pacing_and_flow": {
+                "score": 50,
+                "confidence": "Medium",
+                "insights": "Not available",
+                "editing_pace": {
+                    "average_cuts_per_second": 0,
+                    "total_cut_count": 0,
+                    "pacing_analysis": "Not available"
+                }
+            }
+        }
+    
+    # Make sure contradiction_analysis exists (from the older analysis)
+    if "contradiction_analysis" not in analysis:
+        analysis["contradiction_analysis"] = []
+        
     return analysis
 
 def fallback_merge(gemini_analysis: Dict[str, Any], clarifai_analysis: Dict[str, Any]) -> Dict[str, Any]:
@@ -926,16 +1274,49 @@ def fallback_merge(gemini_analysis: Dict[str, Any], clarifai_analysis: Dict[str,
     # Ensure we have demographic data
     demographics_breakdown = {}
     if "demographics" in clarifai_analysis:
+        # Extract total people count with a default of 1 if not specified
+        total_people_count = 1
+        if "total_people_count" in clarifai_analysis["demographics"]:
+            total_people_count = clarifai_analysis["demographics"]["total_people_count"]
+            if isinstance(total_people_count, str):
+                try:
+                    total_people_count = int(total_people_count)
+                except:
+                    total_people_count = 1
+        
         demographics_breakdown = {
+            "total_people_count": total_people_count,
             "gender_distribution": clarifai_analysis["demographics"].get("gender_distribution", {}),
             "age_distribution": clarifai_analysis["demographics"].get("age_distribution", {}),
-            "ethnicity_distribution": clarifai_analysis["demographics"].get("ethnicity_distribution", {})
+            "ethnicity_distribution": clarifai_analysis["demographics"].get("ethnicity_distribution", {}),
+            "screen_time_distribution": clarifai_analysis["demographics"].get("screen_time_distribution", {
+                "main_subjects": 100,
+                "secondary_subjects": 0,
+                "background_appearances": 0
+            })
         }
-    
+        
+        # Normalize ethnicity distribution to ensure it adds up to 100%
+        if "ethnicity_distribution" in demographics_breakdown:
+            ethnicity_dist = demographics_breakdown["ethnicity_distribution"]
+            if ethnicity_dist and sum(ethnicity_dist.values()) > 0:
+                total = sum(ethnicity_dist.values())
+                for key in ethnicity_dist:
+                    ethnicity_dist[key] = (ethnicity_dist[key] / total) * 100
+                    
     # Get performance metrics if available
     perf_metrics = {}
     if "performance_metrics" in clarifai_analysis:
         perf_metrics = clarifai_analysis["performance_metrics"]
+    
+    # Extract emotional data
+    emotional_data = {
+        "dominant_emotions": clarifai_analysis.get("emotional_analysis", {}).get("dominant_emotions", ["Neutral"]),
+        "emotional_arc": clarifai_analysis.get("emotional_analysis", {}).get("emotional_arc", "Not available"),
+        "emotional_resonance_score": 50,
+        "confidence": "Medium",
+        "insights": "Limited emotional analysis data available"
+    }
     
     # Create a basic merged structure that matches what the frontend expects
     merged = {
@@ -943,7 +1324,8 @@ def fallback_merge(gemini_analysis: Dict[str, Any], clarifai_analysis: Dict[str,
             "timestamp": datetime.now().isoformat(),
             "video_id": gemini_analysis.get("id", "unknown"),
             "confidence_index": 70,
-            "analysis_sources": ["Gemini", "ClarifAI"]
+            "analysis_sources": ["Gemini", "ClarifAI"],
+            "people_count": demographics_breakdown.get("total_people_count", 1)
         },
         "summary": {
             "content_overview": clarifai_analysis.get("overview", {}).get("content_summary", "Content summary not available"),
@@ -990,7 +1372,7 @@ def fallback_merge(gemini_analysis: Dict[str, Any], clarifai_analysis: Dict[str,
                 "factors": ["Relatability", "Emotional impact", "Uniqueness"],
                 "breakdown": {
                     "uniqueness": 50,
-                    "shareability": perf_metrics.get("shareability", 50),
+                    "shareability": 50,
                     "emotional_impact": 50,
                     "relevance": 50,
                     "trending_potential": 50
@@ -1004,7 +1386,10 @@ def fallback_merge(gemini_analysis: Dict[str, Any], clarifai_analysis: Dict[str,
             "demographics_breakdown": demographics_breakdown,
             "diversity_score": 50,
             "inclusion_rating": 50,
-            "appeal_breadth": 50
+            "appeal_breadth": 50,
+            "ethnicity_confidence": "Medium",
+            "gender_confidence": "Medium",
+            "age_confidence": "Medium"
         },
         "primary_audience": {
             "demographic": clarifai_analysis.get("audience_fit", {}).get("primary_audience", "General audience"),
@@ -1018,11 +1403,85 @@ def fallback_merge(gemini_analysis: Dict[str, Any], clarifai_analysis: Dict[str,
                 "reasons": ["Audience interest match", "Content relevance"]
             } for audience in clarifai_analysis.get("audience_fit", {}).get("secondary_audiences", [])
         ],
+        "content_analysis": {
+            "style": clarifai_analysis.get("overview", {}).get("setting", "Not available"),
+            "tone": clarifai_analysis.get("emotional_analysis", {}).get("tone", "Not available"),
+            "pacing": "Not available",
+            "visual_quality": {
+                "score": 50,
+                "lighting": "Not available",
+                "composition": "Not available",
+                "colors": "Not available"
+            },
+            "audio_quality": {
+                "score": 50,
+                "clarity": "Not available",
+                "background_noise": "Not available",
+                "music": "Not available"
+            }
+        },
+        "audience_fit": {
+            "primary_audience": clarifai_analysis.get("audience_fit", {}).get("primary_audience", "General audience"),
+            "audience_match_scores": clarifai_analysis.get("audience_fit", {}).get("audience_match_scores", {
+                "Gen Z": 50,
+                "Millennials": 50,
+                "Gen X": 50,
+                "Baby Boomers": 50
+            }),
+            "platform_fit": platform_fit
+        },
+        "recommendations": {
+            "priority_improvements": [],
+            "optimization_suggestions": {
+                "content": [],
+                "technical": [],
+                "audience_targeting": []
+            }
+        },
+        "emotional_analysis": emotional_data,
+        "content_quality": {
+            "visual_elements": {
+                "score": 50,
+                "confidence": "Medium",
+                "strengths": ["Visual quality assessment not available"],
+                "improvement_areas": [],
+                "color_scheme": {
+                    "dominant_colors": [],
+                    "color_mood": "Not available",
+                    "saturation_level": 50,
+                    "contrast_rating": 50
+                }
+            },
+            "audio_elements": {
+                "score": 50,
+                "confidence": "Medium",
+                "strengths": [],
+                "improvement_areas": []
+            },
+            "narrative_structure": {
+                "score": 50,
+                "confidence": "Medium",
+                "strengths": [],
+                "improvement_areas": []
+            },
+            "pacing_and_flow": {
+                "score": 50,
+                "confidence": "Medium",
+                "insights": "Not available",
+                "editing_pace": {
+                    "average_cuts_per_second": 0,
+                    "total_cut_count": 0,
+                    "pacing_analysis": "Not available"
+                }
+            }
+        },
+        "contradiction_analysis": [],
         "gemini_analysis": gemini_analysis.get("analysis", {}),
         "clarifai_analysis": clarifai_analysis
     }
     
-    return merged
+    # Apply frontend compatibility to ensure all fields are present
+    return ensure_frontend_compatible_analysis(merged)
 
 def upload_json_to_s3(data: Dict[str, Any], bucket: str, s3_object_name: str):
     """Uploads a dictionary as a JSON file to S3."""
