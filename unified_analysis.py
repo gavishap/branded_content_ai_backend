@@ -15,6 +15,12 @@ from inference_layer import analyze_video_output
 from structured_analysis import process_analysis, validate_demographic_data
 from clarif_ai_insights import analyze_video_multi_model, download_video_with_ytdlp, upload_to_s3
 from s3_utils import S3_BUCKET_NAME, s3_client
+try:
+    from analyze_video import ensure_frontend_compatible_analysis
+except ImportError:
+    # If the module isn't available, define a simple pass-through function
+    def ensure_frontend_compatible_analysis(analysis):
+        return analysis
 
 # Load environment variables
 load_dotenv()
@@ -259,6 +265,16 @@ def extract_metrics_from_gemini(gemini_analysis: Dict[str, Any]) -> Dict[str, An
                     "improvement_suggestions": perf_metrics.get("Improvement Suggestions", [])
                 }
             
+            # Get demographic data
+            if "Demographic Analysis" in analysis:
+                demographics = analysis["Demographic Analysis"]
+                metrics["demographics"] = {
+                    "gender_distribution": demographics.get("Gender Distribution", {}),
+                    "age_distribution": demographics.get("Age Distribution", {}),
+                    "ethnicity_distribution": demographics.get("Ethnicity Distribution", {}),
+                    "representation_quality": demographics.get("Representation Quality", "")
+                }
+            
             # Get detailed analysis
             if "Detailed Analysis" in analysis and "In-depth Video Analysis" in analysis["Detailed Analysis"]:
                 details = analysis["Detailed Analysis"]["In-depth Video Analysis"]
@@ -317,7 +333,7 @@ def combine_analyses(gemini_analysis: Dict[str, Any], clarifai_analysis: Dict[st
 You are an expert AI video analyst specializing in synthesizing multiple analyses of video content.
 You are being provided with two different AI analyses of the same video:
 
-1. Standard Analysis (Gemini): Focuses on content, style, performance metrics, visual analysis, product analysis, viral potential, and detailed observations.
+1. Standard Analysis (Gemini): Focuses on content, style, performance metrics, visual analysis, product analysis, viral potential, demographic analysis, and detailed observations.
 2. Structured Analysis (ClarifAI): Focuses on demographic representation, emotional tone, visual elements, and audience fit.
 
 # Your task:
@@ -325,15 +341,16 @@ Create a unified, comprehensive analysis that combines insights from both source
 
 # Guidelines:
 1. CRITICAL: Compare corresponding metrics between the two analyses and reconcile any contradictions.
-2. When metrics differ significantly, add a confidence rating (Low/Medium/High) based on:
+2. ESPECIALLY IMPORTANT: Compare demographic data (gender, age, ethnicity distributions) from both analyses and create a more accurate combined assessment.
+3. When metrics differ significantly, add a confidence rating (Low/Medium/High) based on:
    - How much the analyses agree
    - The specificity of the observations
    - Internal consistency within each analysis
-3. For contradictory insights, present both perspectives with your reconciliation.
-4. Use facts from BOTH analyses to create more nuanced insights.
-5. Make the unified output more detailed and useful than either input alone.
-6. The output must be well-structured for display in dashboards with charts, graphs, and tables.
-7. IMPORTANT: Incorporate ALL metrics and insights from both analyses without omitting any key information.
+4. For contradictory insights, present both perspectives with your reconciliation.
+5. Use facts from BOTH analyses to create more nuanced insights.
+6. Make the unified output more detailed and useful than either input alone.
+7. The output must be well-structured for display in dashboards with charts, graphs, and tables.
+8. IMPORTANT: Incorporate ALL metrics and insights from both analyses without omitting any key information.
 
 # Input Analysis 1 (Gemini):
 ```json
@@ -398,165 +415,91 @@ You MUST respond using ONLY valid JSON in this EXACT structure. Ensure your outp
       "score": 0-100,
       "confidence": "High/Medium/Low",
       "detailed_analysis": "Analysis of viral qualities",
+      "factors": ["Factor 1", "Factor 2", "Factor 3"],
       "breakdown": {{
-        "visuals_quality": 0-100,
-        "emotional_resonance": 0-100,
-        "shareability_factor": 0-100,
-        "relatability": 0-100,
-        "uniqueness": 0-100
+        "uniqueness": 0-100,
+        "shareability": 0-100,
+        "emotional_impact": 0-100,
+        "relevance": 0-100,
+        "trending_potential": 0-100
       }}
     }}
   }},
-  "audience_analysis": {{
-    "primary_audience": {{
-      "demographic": "Main demographic group",
-      "confidence": "High/Medium/Low",
-      "platform_fit": {{
-        "instagram": 0-100,
-        "tiktok": 0-100,
-        "youtube": 0-100,
-        "facebook": 0-100
-      }}
-    }},
-    "secondary_audiences": [
-      {{
-        "demographic": "Secondary demographic group",
-        "confidence": "High/Medium/Low",
-        "reasons": ["Reason 1", "Reason 2"]
-      }}
-    ],
-    "representation_metrics": {{
-      "diversity_score": 0-100,
-      "inclusion_rating": 0-100,
-      "appeal_breadth": 0-100,
-      "insights": "Analysis of demographic representation",
-      "demographics_breakdown": {{
-        "age_distribution": {{}},
-        "gender_distribution": {{}},
-        "ethnicity_distribution": {{}}
-      }}
-    }}
-  }},
-  "content_quality": {{
-    "visual_elements": {{
-      "score": 0-100,
-      "confidence": "High/Medium/Low",
-      "strengths": ["Strength 1", "Strength 2"],
-      "improvement_areas": ["Area 1", "Area 2"],
-      "color_scheme": {{
-        "dominant_colors": ["Color 1", "Color 2"],
-        "color_mood": "Description of mood",
-        "saturation_level": 0-100,
-        "contrast_rating": 0-100
-      }}
-    }},
-    "audio_elements": {{
-      "score": 0-100,
-      "confidence": "High/Medium/Low",
-      "strengths": ["Strength 1", "Strength 2"],
-      "improvement_areas": ["Area 1", "Area 2"]
-    }},
-    "narrative_structure": {{
-      "score": 0-100,
-      "confidence": "High/Medium/Low",
-      "strengths": ["Strength 1", "Strength 2"],
-      "improvement_areas": ["Area 1", "Area 2"]
-    }},
-    "pacing_and_flow": {{
-      "score": 0-100,
-      "confidence": "High/Medium/Low",
-      "insights": "Analysis of pacing effectiveness",
-      "editing_pace": {{
-        "average_cuts_per_second": "e.g. 1 cut every 2.5 seconds",
-        "total_cut_count": 0,
-        "pacing_analysis": "Whether the editing rhythm enhances or detracts from content"
-      }}
-    }},
-    "product_presentation": {{
-      "featured_products": [
-        {{
-          "name": "Product name",
-          "screen_time": "Duration in seconds",
-          "presentation_quality": 0-100
-        }}
-      ],
-      "overall_presentation_score": 0-100,
-      "confidence": "High/Medium/Low"
-    }}
-  }},
-  "emotional_analysis": {{
-    "dominant_emotions": ["Emotion 1", "Emotion 2"],
-    "emotional_arc": "Description of emotional journey",
-    "emotional_resonance_score": 0-100,
+  "representation_metrics": {{
+    "overall_score": 0-100,
     "confidence": "High/Medium/Low",
-    "insights": "Analysis comparing emotional assessments"
-  }},
-  "competitive_advantage": {{
-    "uniqueness_factors": ["Factor 1", "Factor 2"],
-    "differentiation_score": 0-100,
-    "market_positioning": "Analysis of content positioning",
-    "confidence": "High/Medium/Low"
-  }},
-  "optimization_recommendations": {{
-    "priority_improvements": [
-      {{
-        "area": "Area for improvement",
-        "recommendation": "Specific action",
-        "expected_impact": "High/Medium/Low",
-        "confidence": "High/Medium/Low"
+    "insights": "Analysis of demographic representation quality, combining both analyses",
+    "demographics_breakdown": {{
+      "gender_distribution": {{
+        "male": 0-100,
+        "female": 0-100,
+        "other/nonbinary": 0-100
+      }},
+      "age_distribution": {{
+        "0-17": 0-100,
+        "18-24": 0-100,
+        "25-34": 0-100,
+        "35-44": 0-100,
+        "45-64": 0-100,
+        "65+": 0-100
+      }},
+      "ethnicity_distribution": {{
+        "caucasian": 0-100,
+        "asian": 0-100,
+        "black": 0-100,
+        "hispanic": 0-100,
+        "middle_eastern": 0-100,
+        "other": 0-100
       }}
-    ],
-    "a_b_testing_suggestions": [
-      {{
-        "element": "Element to test",
-        "variations": ["Option 1", "Option 2"],
-        "expected_insights": "What you might learn"
-      }}
-    ],
-    "platform_specific_optimizations": {{
-      "instagram": ["Tip 1", "Tip 2"],
-      "tiktok": ["Tip 1", "Tip 2"],
-      "youtube": ["Tip 1", "Tip 2"],
-      "facebook": ["Tip 1", "Tip 2"]
     }},
-    "thumbnail_optimization": ["Tip 1", "Tip 2"]
+    "comparative_analysis": "Explanation of how the analyses differ in their demographic assessments and which is more likely correct based on confidence factors"
   }},
-  "transcription_analysis": {{
-    "available": true,
-    "subtitle_coverage": {{
-      "percentage": 0-100,
-      "missing_segments": [
-        {{"start": "timestamp", "end": "timestamp"}}
-      ],
-      "quality_score": 0-100,
-      "issues": ["Issue 1", "Issue 2"]
+  "content_analysis": {{
+    "style": "Description of content style",
+    "tone": "Description of content tone",
+    "pacing": "Analysis of editing and timing",
+    "visual_quality": {{
+      "score": 0-100,
+      "lighting": "Description of lighting quality",
+      "composition": "Description of visual composition",
+      "colors": "Description of color scheme"
     }},
-    "key_phrases": ["Phrase 1", "Phrase 2"],
-    "confidence": "High/Medium/Low"
-  }},
-  "contradiction_analysis": [
-    {{
-      "metric": "Name of conflicting metric",
-      "gemini_assessment": "What Gemini analyzed",
-      "clarifai_assessment": "What ClarifAI analyzed",
-      "reconciliation": "How the conflict was resolved",
-      "confidence_in_reconciliation": "High/Medium/Low"
+    "audio_quality": {{
+      "score": 0-100,
+      "clarity": "Description of audio clarity",
+      "background_noise": "Assessment of background noise",
+      "music": "Description of music if present"
     }}
-  ]
+  }},
+  "audience_fit": {{
+    "primary_audience": ["Audience Segment 1", "Audience Segment 2"],
+    "audience_match_scores": {{
+      "Gen Z": 0-100,
+      "Millennials": 0-100,
+      "Gen X": 0-100,
+      "Baby Boomers": 0-100
+    }},
+    "platform_fit": {{
+      "Instagram": 0-100,
+      "TikTok": 0-100,
+      "YouTube": 0-100,
+      "Facebook": 0-100
+    }}
+  }},
+  "recommendations": {{
+    "priority_improvements": ["Recommendation 1", "Recommendation 2"],
+    "optimization_suggestions": {{
+      "content": ["Suggestion 1", "Suggestion 2"],
+      "technical": ["Suggestion 1", "Suggestion 2"],
+      "audience_targeting": ["Suggestion 1", "Suggestion 2"]
+    }}
+  }}
 }}
 ```
 
-Your analysis must be extremely thorough, leaving out no significant information from either source analysis. Ensure your unified analysis capitalizes on the unique strengths of both original analyses:
+For demographic data specifically, carefully compare the gender, age, and ethnicity distributions from both analyses. Where there are differences, explain why one might be more accurate than the other, and create a best estimate synthesis. Prioritize Gemini's demographic analysis but improve it with insights from ClarifAI where appropriate.
 
-1. From Gemini: Extract detailed performance metrics, visual analysis, product insights, and viral potential.
-2. From ClarifAI: Leverage demographic data, emotional tone analysis, and representation metrics.
-
-When both analyses provide metrics for the same aspect (like engagement potential), carefully reconcile any differences and explain your reasoning.
-
-Approach this task with exceptional thoroughness. Ensure the unified analysis provides comprehensive, actionable insights that capitalize on the strengths of both original analyses.
-
-CRITICAL: Double-check that your response is valid, parseable JSON.
-"""
+IMPORTANT: Ensure that all percentage values in demographics are numerical values (not strings), and that each distribution category (gender, age, ethnicity) has percentages that add up to approximately 100."""
 
     # Configure the model for more consistent output
     model.temperature = 0.2
@@ -621,6 +564,9 @@ def validate_unified_analysis(unified_analysis: Dict[str, Any],
         # First, let's check for and fix any non-numeric demographic data
         unified_analysis = validate_demographic_data_in_unified(unified_analysis)
         
+        # Then, ensure the required structure exists for frontend compatibility
+        unified_analysis = ensure_frontend_compatible_analysis(unified_analysis)
+        
         # Then, let's verify the JSON structure of the unified_analysis
         # Convert to string and back to ensure it's valid JSON
         unified_json_str = json.dumps(unified_analysis)
@@ -678,6 +624,8 @@ Response Instructions:
         # Validate the JSON before returning
         try:
             validated_analysis = json.loads(json_str)
+            # Ensure the validated analysis still has the required structure
+            validated_analysis = ensure_frontend_compatible_analysis(validated_analysis)
             print("Validation successful, returning validated analysis")
             return validated_analysis
         except json.JSONDecodeError as e:
@@ -713,6 +661,24 @@ def validate_demographic_data_in_unified(unified_analysis: Dict[str, Any]) -> Di
     elif "demographics" in unified_analysis:
         demographics = unified_analysis["demographics"]
         distributions = ["age_distribution", "gender_distribution", "ethnicity_distribution"]
+    elif "gemini_analysis" in unified_analysis and "Demographic Analysis" in unified_analysis["gemini_analysis"]:
+        demographics = unified_analysis["gemini_analysis"]["Demographic Analysis"]
+        # Map Gemini's keys to our standard keys
+        distributions = []
+        key_mapping = {
+            "Gender Distribution": "gender_distribution",
+            "Age Distribution": "age_distribution", 
+            "Ethnicity Distribution": "ethnicity_distribution"
+        }
+        # Create a new standardized structure
+        standardized_demographics = {}
+        for gemini_key, standard_key in key_mapping.items():
+            if gemini_key in demographics:
+                standardized_demographics[standard_key] = demographics[gemini_key]
+                distributions.append(standard_key)
+        
+        # Replace with standardized structure
+        demographics = standardized_demographics
     else:
         print("No demographics data found to validate in unified analysis")
         return unified_analysis
@@ -773,9 +739,163 @@ def validate_demographic_data_in_unified(unified_analysis: Dict[str, Any]) -> Di
         unified_analysis["clarifai_analysis"]["demographics"] = demographics
     elif "demographics" in unified_analysis:
         unified_analysis["demographics"] = demographics
+    elif "gemini_analysis" in unified_analysis and "Demographic Analysis" in unified_analysis["gemini_analysis"]:
+        # Convert back to Gemini's structure
+        gemini_demographics = {}
+        key_mapping = {
+            "gender_distribution": "Gender Distribution",
+            "age_distribution": "Age Distribution", 
+            "ethnicity_distribution": "Ethnicity Distribution"
+        }
+        for standard_key, gemini_key in key_mapping.items():
+            if standard_key in demographics:
+                gemini_demographics[gemini_key] = demographics[standard_key]
+        
+        # Replace Gemini's demographics with validated version
+        unified_analysis["gemini_analysis"]["Demographic Analysis"] = gemini_demographics
     
     print("Demographics data in unified analysis validated and fixed if needed")
     return unified_analysis
+
+def ensure_frontend_compatible_analysis(analysis: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Ensure the analysis has the required structure for frontend compatibility.
+    
+    Args:
+        analysis: The analysis data to validate
+        
+    Returns:
+        Dict with the required structure for frontend compatibility
+    """
+    # Make sure metadata exists
+    if "metadata" not in analysis:
+        analysis["metadata"] = {
+            "timestamp": datetime.now().isoformat(),
+            "video_id": "unknown",
+            "confidence_index": 70,
+            "analysis_sources": ["Gemini", "ClarifAI"]
+        }
+        
+    # Make sure summary exists
+    if "summary" not in analysis:
+        analysis["summary"] = {
+            "content_overview": "Content overview not available",
+            "key_strengths": [],
+            "improvement_areas": [],
+            "overall_performance_score": 50
+        }
+        
+    # Make sure performance_metrics exists with all required metrics
+    if "performance_metrics" not in analysis:
+        analysis["performance_metrics"] = {}
+        
+    # Check individual metrics
+    metrics = ["engagement", "shareability", "conversion_potential", "viral_potential"]
+    for metric in metrics:
+        if metric not in analysis["performance_metrics"]:
+            analysis["performance_metrics"][metric] = {
+                "score": 50,
+                "confidence": "Medium",
+                "insights": f"No {metric} data available",
+                "breakdown": {}
+            }
+        
+        # Make sure breakdown exists for each metric
+        if "breakdown" not in analysis["performance_metrics"][metric]:
+            analysis["performance_metrics"][metric]["breakdown"] = {}
+            
+        # Set default breakdown fields if empty
+        if len(analysis["performance_metrics"][metric]["breakdown"]) == 0:
+            if metric == "engagement":
+                analysis["performance_metrics"][metric]["breakdown"] = {
+                    "hook_effectiveness": 50,
+                    "emotional_impact": 50,
+                    "audience_retention": 50,
+                    "attention_score": 50
+                }
+            elif metric == "shareability":
+                analysis["performance_metrics"][metric]["breakdown"] = {
+                    "uniqueness": 50,
+                    "relevance": 50,
+                    "trending_potential": 50
+                }
+            elif metric == "conversion_potential":
+                analysis["performance_metrics"][metric]["breakdown"] = {
+                    "call_to_action_clarity": 50,
+                    "value_proposition": 50,
+                    "persuasiveness": 50
+                }
+            elif metric == "viral_potential":
+                analysis["performance_metrics"][metric]["breakdown"] = {
+                    "uniqueness": 50,
+                    "shareability": 50,
+                    "emotional_impact": 50,
+                    "relevance": 50, 
+                    "trending_potential": 50
+                }
+    
+    # Make sure representation_metrics exists with demographics_breakdown
+    if "representation_metrics" not in analysis:
+        analysis["representation_metrics"] = {
+            "overall_score": 50,
+            "confidence": "Medium",
+            "insights": "No representation data available",
+            "demographics_breakdown": {
+                "gender_distribution": {},
+                "age_distribution": {},
+                "ethnicity_distribution": {}
+            }
+        }
+    elif "demographics_breakdown" not in analysis["representation_metrics"]:
+        analysis["representation_metrics"]["demographics_breakdown"] = {
+            "gender_distribution": {},
+            "age_distribution": {},
+            "ethnicity_distribution": {}
+        }
+        
+    # Make sure primary_audience exists with platform_fit
+    if "primary_audience" not in analysis:
+        analysis["primary_audience"] = {
+            "demographic": "General audience",
+            "confidence": "Medium",
+            "platform_fit": {
+                "Instagram": 50,
+                "TikTok": 50,
+                "YouTube": 50,
+                "Facebook": 50
+            }
+        }
+    elif "platform_fit" not in analysis["primary_audience"]:
+        analysis["primary_audience"]["platform_fit"] = {
+            "Instagram": 50,
+            "TikTok": 50,
+            "YouTube": 50,
+            "Facebook": 50
+        }
+        
+    # Convert platform_suitability to platform_fit if it exists
+    if "audience_fit" in analysis:
+        if "platform_suitability" in analysis["audience_fit"] and "platform_fit" not in analysis["audience_fit"]:
+            analysis["audience_fit"]["platform_fit"] = analysis["audience_fit"]["platform_suitability"]
+            
+        # Ensure primary_audience exists if audience_fit exists
+        if "primary_audience" not in analysis["audience_fit"]:
+            analysis["audience_fit"]["primary_audience"] = "General audience"
+            
+        # Make sure platform_fit exists in audience_fit
+        if "platform_fit" not in analysis["audience_fit"]:
+            analysis["audience_fit"]["platform_fit"] = {
+                "Instagram": 50,
+                "TikTok": 50,
+                "YouTube": 50,
+                "Facebook": 50
+            }
+            
+    # Make sure secondary_audiences exists
+    if "secondary_audiences" not in analysis:
+        analysis["secondary_audiences"] = []
+        
+    return analysis
 
 def fallback_merge(gemini_analysis: Dict[str, Any], clarifai_analysis: Dict[str, Any]) -> Dict[str, Any]:
     """
@@ -783,7 +903,41 @@ def fallback_merge(gemini_analysis: Dict[str, Any], clarifai_analysis: Dict[str,
     """
     print("Using fallback merge approach...")
     
-    # Create a basic merged structure
+    # Extract platform suitability data if available
+    platform_fit = {}
+    if "audience_fit" in clarifai_analysis and "platform_fit" in clarifai_analysis["audience_fit"]:
+        platform_fit = clarifai_analysis["audience_fit"]["platform_fit"]
+    elif "platform_fit" in clarifai_analysis:
+        platform_fit = clarifai_analysis["platform_fit"]
+    # Check for platform_suitability as a fallback
+    elif "audience_fit" in clarifai_analysis and "platform_suitability" in clarifai_analysis["audience_fit"]:
+        platform_fit = clarifai_analysis["audience_fit"]["platform_suitability"]
+    elif "platform_suitability" in clarifai_analysis:
+        platform_fit = clarifai_analysis["platform_suitability"]
+    else:
+        # Default platform fit data if nothing found
+        platform_fit = {
+            "Instagram": 50,
+            "TikTok": 50,
+            "YouTube": 50,
+            "Facebook": 50
+        }
+    
+    # Ensure we have demographic data
+    demographics_breakdown = {}
+    if "demographics" in clarifai_analysis:
+        demographics_breakdown = {
+            "gender_distribution": clarifai_analysis["demographics"].get("gender_distribution", {}),
+            "age_distribution": clarifai_analysis["demographics"].get("age_distribution", {}),
+            "ethnicity_distribution": clarifai_analysis["demographics"].get("ethnicity_distribution", {})
+        }
+    
+    # Get performance metrics if available
+    perf_metrics = {}
+    if "performance_metrics" in clarifai_analysis:
+        perf_metrics = clarifai_analysis["performance_metrics"]
+    
+    # Create a basic merged structure that matches what the frontend expects
     merged = {
         "metadata": {
             "timestamp": datetime.now().isoformat(),
@@ -791,6 +945,79 @@ def fallback_merge(gemini_analysis: Dict[str, Any], clarifai_analysis: Dict[str,
             "confidence_index": 70,
             "analysis_sources": ["Gemini", "ClarifAI"]
         },
+        "summary": {
+            "content_overview": clarifai_analysis.get("overview", {}).get("content_summary", "Content summary not available"),
+            "key_strengths": gemini_analysis.get("analysis", {}).get("Performance Metrics", {}).get("Key Strengths", []),
+            "improvement_areas": gemini_analysis.get("analysis", {}).get("Performance Metrics", {}).get("Improvement Suggestions", []),
+            "overall_performance_score": perf_metrics.get("engagement_score", 50)
+        },
+        "performance_metrics": {
+            "engagement": {
+                "score": perf_metrics.get("engagement_score", 50),
+                "confidence": "Medium",
+                "insights": "Combined analysis of engagement factors",
+                "breakdown": {
+                    "hook_effectiveness": perf_metrics.get("hook_score", 50),
+                    "emotional_impact": perf_metrics.get("emotional_impact", 50),
+                    "audience_retention": perf_metrics.get("retention_score", 50),
+                    "attention_score": int(gemini_analysis.get("analysis", {}).get("Performance Metrics", {}).get("Attention Score", 50))
+                }
+            },
+            "shareability": {
+                "score": perf_metrics.get("shareability", 50),
+                "confidence": "Medium",
+                "insights": "Analysis of content's potential to be shared",
+                "breakdown": {
+                    "uniqueness": 50,
+                    "relevance": 50,
+                    "trending_potential": 50
+                }
+            },
+            "conversion_potential": {
+                "score": perf_metrics.get("ctr_potential", 50),
+                "confidence": "Medium",
+                "insights": "Analysis of conversion potential based on content",
+                "breakdown": {
+                    "call_to_action_clarity": 50,
+                    "value_proposition": 50,
+                    "persuasiveness": 50
+                }
+            },
+            "viral_potential": {
+                "score": 50,
+                "confidence": "Medium",
+                "detailed_analysis": "Analysis of the content's viral qualities",
+                "factors": ["Relatability", "Emotional impact", "Uniqueness"],
+                "breakdown": {
+                    "uniqueness": 50,
+                    "shareability": perf_metrics.get("shareability", 50),
+                    "emotional_impact": 50,
+                    "relevance": 50,
+                    "trending_potential": 50
+                }
+            }
+        },
+        "representation_metrics": {
+            "overall_score": perf_metrics.get("representation_index", 50),
+            "confidence": "Medium",
+            "insights": "Analysis of demographic representation",
+            "demographics_breakdown": demographics_breakdown,
+            "diversity_score": 50,
+            "inclusion_rating": 50,
+            "appeal_breadth": 50
+        },
+        "primary_audience": {
+            "demographic": clarifai_analysis.get("audience_fit", {}).get("primary_audience", "General audience"),
+            "confidence": "Medium",
+            "platform_fit": platform_fit
+        },
+        "secondary_audiences": [
+            {
+                "demographic": audience,
+                "confidence": "Medium",
+                "reasons": ["Audience interest match", "Content relevance"]
+            } for audience in clarifai_analysis.get("audience_fit", {}).get("secondary_audiences", [])
+        ],
         "gemini_analysis": gemini_analysis.get("analysis", {}),
         "clarifai_analysis": clarifai_analysis
     }
@@ -959,6 +1186,9 @@ def analyze_video(video_url_or_path: str, analysis_id: str, analysis_name: str, 
                 "clarifai_error": clarifai_analysis.get("metadata", {}).get("error") if clarifai_has_error else None
             }
         
+        # Ensure the analysis is frontend compatible
+        unified_analysis = ensure_frontend_compatible_analysis(unified_analysis)
+        
         # Save the unified analysis (which now includes the ID and name)
         save_unified_analysis(unified_analysis)
         
@@ -986,6 +1216,9 @@ def analyze_video(video_url_or_path: str, analysis_id: str, analysis_name: str, 
             },
             "error": str(e)
         }
+        
+        # Ensure error analysis is frontend compatible
+        error_analysis = ensure_frontend_compatible_analysis(error_analysis)
         
         # Try to save even the error analysis
         try:

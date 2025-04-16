@@ -22,6 +22,9 @@ import traceback
 import atexit
 import subprocess
 import concurrent.futures
+from analyze_video import ensure_frontend_compatible_analysis
+import json
+from typing import Dict, Any
 
 app = Flask(__name__)
 #comment out the CORS middleware to avoid duplicate headers
@@ -171,8 +174,14 @@ def get_analysis(analysis_id):
 
         if analysis_data:
             print(f"Successfully retrieved analysis {analysis_id} from S3")
-            # The data from S3 should already be in the correct format
-            return jsonify(analysis_data), 200
+            # Ensure data is in the format the frontend expects
+            try:
+                compatible_data = ensure_frontend_compatible_analysis(analysis_data)
+                print("Applied frontend compatibility transformation to analysis data")
+                return jsonify(compatible_data), 200
+            except Exception as e:
+                print(f"Error applying frontend compatibility: {e}, returning original data")
+                return jsonify(analysis_data), 200
         else:
             # If not found in S3, check for an error file as a fallback
             print(f"Analysis {analysis_id} not found in S3. Checking for error file.")
@@ -180,29 +189,47 @@ def get_analysis(analysis_id):
             error_data = download_json_from_s3(S3_BUCKET_NAME, s3_error_key)
             if error_data:
                  print(f"Found error file for analysis {analysis_id} in S3")
-                 # Return the error data, maybe with a different status code if desired?
-                 # For now, return 200 but let frontend handle the error flag within data
-                 return jsonify(error_data), 200
+                 # Apply compatibility to error data as well
+                 try:
+                     compatible_error = ensure_frontend_compatible_analysis(error_data)
+                     return jsonify(compatible_error), 200
+                 except Exception as e:
+                     print(f"Error applying frontend compatibility to error data: {e}, returning original error")
+                     return jsonify(error_data), 200
             else:
                  # If neither main nor error file found
                  print(f"Analysis {analysis_id} not found in S3 (neither main nor error file)")
-                 return jsonify({
+                 not_found_response = {
                      "error": "Analysis not found",
                      "metadata": {"id": analysis_id},
                      "summary": {
                          "content_overview": "Analysis data not found",
                          "overall_performance_score": 0
                      }
-                 }), 404
+                 }
+                 # Apply compatibility to not found response as well
+                 try:
+                     compatible_not_found = ensure_frontend_compatible_analysis(not_found_response)
+                     return jsonify(compatible_not_found), 404
+                 except Exception as e:
+                     print(f"Error applying frontend compatibility to not found response: {e}")
+                     return jsonify(not_found_response), 404
 
     except Exception as e:
         # Handle potential errors during S3 download (e.g., credentials, permissions)
         print(f"Error retrieving analysis {analysis_id} from S3: {e}")
         traceback.print_exc()
-        return jsonify({
+        error_response = {
             "error": f"Failed to retrieve analysis from storage: {str(e)}",
             "metadata": {"id": analysis_id}
-        }), 500
+        }
+        # Apply compatibility function to make sure the error response has all required structures
+        try:
+            compatible_error = ensure_frontend_compatible_analysis(error_response)
+            return jsonify(compatible_error), 500
+        except Exception as transform_error:
+            print(f"Error applying frontend compatibility to error response: {transform_error}")
+            return jsonify(error_response), 500
 
 @app.route('/api/analysis/<analysis_id>', methods=['DELETE'])
 def delete_analysis(analysis_id):
@@ -570,7 +597,6 @@ def process_unified_analysis_url(analysis_id, video_url, analysis_name, update_p
             analysis_progress[analysis_id]["status"] = "error"
             # Attempt to save error report to S3
             try:
-                from unified_analysis import save_unified_analysis # Import locally if needed
                 save_unified_analysis(error_result)
             except Exception as save_e:
                 print(f"Could not save error analysis report: {save_e}")
@@ -646,7 +672,6 @@ def process_unified_analysis_file(analysis_id, file_path, filename, analysis_nam
              analysis_progress[analysis_id]["status"] = "error"
              # Attempt to save error report to S3
              try:
-                 from unified_analysis import save_unified_analysis # Import locally if needed
                  save_unified_analysis(error_result)
              except Exception as save_e:
                  print(f"Could not save error analysis report: {save_e}")
@@ -782,6 +807,51 @@ def download_video_with_ytdlp(video_url, output_path=None):
             
     # Return the path to the downloaded file
     return output_path
+
+def save_unified_analysis(unified_analysis: Dict[str, Any]) -> str:
+    """Save the unified analysis locally and upload to S3."""
+    filename = None
+    analysis_id = unified_analysis.get("metadata", {}).get("id")
+
+    try:
+        # Apply structure validation before saving
+        try:
+            unified_analysis = ensure_frontend_compatible_analysis(unified_analysis)
+            print("Applied frontend compatibility check to unified analysis")
+        except ImportError:
+            print("Could not import ensure_frontend_compatible_analysis, skipping structure validation")
+        except Exception as e:
+            print(f"Error applying frontend compatibility: {e}, continuing with original structure")
+            
+        # Verify JSON validity before saving/uploading
+        json_str = json.dumps(unified_analysis, indent=2, ensure_ascii=False)
+        verified_analysis = json.loads(json_str)
+
+        # --- Save Locally (optional, good for debugging) ---
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        # Use analysis_id if available for local filename, otherwise timestamp
+        local_filename_part = analysis_id if analysis_id else f"ts_{timestamp}"
+        local_filename = f"unified_analyses/unified_analysis_{local_filename_part}.json"
+        try:
+            with open(local_filename, 'w', encoding='utf-8') as f:
+                f.write(json_str) # Write the verified string
+            print(f"Unified analysis saved locally to: {local_filename}")
+        except Exception as e:
+            print(f"Error saving analysis locally: {e}")
+        # ---------------------------------------------------
+
+        # --- Upload to S3 --- A
+        if analysis_id and S3_BUCKET_NAME:
+            s3_object_key = f"analysis-results/{analysis_id}.json"
+            upload_json_to_s3(verified_analysis, S3_BUCKET_NAME, s3_object_key)
+        else:
+            print("Skipping S3 upload: Analysis ID or S3 Bucket Name missing.")
+        # -------------------
+
+        return local_filename # Return local filename for consistency if needed
+    except Exception as e:
+        print(f"Error in save_unified_analysis: {e}")
+        return None
 
 if __name__ == '__main__':
     # For local development, use:

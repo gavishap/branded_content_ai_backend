@@ -132,6 +132,28 @@ def _build_analysis_prompt():
             "Optimize thumbnail with clear value proposition"
         ]
     },
+    "Demographic Analysis": {
+        "Gender Distribution": {
+            "male": 60.5,
+            "female": 39.5
+        },
+        "Age Distribution": {
+            "0-17": 5.0,
+            "18-24": 25.0,
+            "25-34": 40.0,
+            "35-44": 20.0,
+            "45-64": 8.0,
+            "65+": 2.0
+        },
+        "Ethnicity Distribution": {
+            "caucasian": 45.0,
+            "asian": 25.0,
+            "hispanic": 15.0,
+            "black": 12.0,
+            "middle_eastern": 3.0
+        },
+        "Representation Quality": "The video shows a moderately diverse range of people across different demographics, with somewhat balanced gender representation and moderate ethnic diversity."
+    },
     "Transcription": {
         "Full Text": "Complete transcription of all spoken words in the video",
         "Subtitle Coverage": {
@@ -217,6 +239,14 @@ def _build_analysis_prompt():
     }
 }
 
+For the Demographic Analysis section:
+- Gender Distribution: Analyze the gender presentation of people appearing in the video with percentage values. Only use male and female categories, with percentages that add up to 100%.
+- Age Distribution: Categorize the approximate ages of people in the video across standard age ranges.
+- Ethnicity Distribution: Estimate the ethnicity representation in the video.
+- Representation Quality: Provide an assessment of overall demographic diversity and representation.
+
+Ensure all demographic percentages are numerical values (not text descriptions) that add up to 100 for each category.
+
 For the Viral Potential section, carefully evaluate each component on a scale of 0-100 based on established research:
 - Visuals: Assess visual quality, composition, color psychology, and whether it stands out in a social feed
 - Emotional_Impact: Evaluate how strongly it triggers emotions like joy, surprise, inspiration or outrage
@@ -260,7 +290,11 @@ def extract_json_from_response(response_text):
             "Performance Metrics.Improvement Suggestions",
             "Detailed Analysis.In-depth Video Analysis.Hook",
             "Detailed Analysis.In-depth Video Analysis.Editing",
-            "Detailed Analysis.In-depth Video Analysis.Tonality"
+            "Detailed Analysis.In-depth Video Analysis.Tonality",
+            "Demographic Analysis.Gender Distribution",
+            "Demographic Analysis.Age Distribution",
+            "Demographic Analysis.Ethnicity Distribution",
+            "Demographic Analysis.Representation Quality"
         ]
         
         # Only check the fields that are essential
@@ -582,6 +616,12 @@ def extract_structured_data(text):
             "Key Strengths": extract_list(text, r"Key Strengths\"?\s*:\s*\[(.*?)\]"),
             "Improvement Suggestions": extract_list(text, r"Improvement Suggestions\"?\s*:\s*\[(.*?)\]")
         },
+        "Demographic Analysis": {
+            "Gender Distribution": extract_demographics(text, r"Gender Distribution\"?\s*:\s*\{(.*?)\}"),
+            "Age Distribution": extract_demographics(text, r"Age Distribution\"?\s*:\s*\{(.*?)\}"),
+            "Ethnicity Distribution": extract_demographics(text, r"Ethnicity Distribution\"?\s*:\s*\{(.*?)\}"),
+            "Representation Quality": extract_value(text, r"Representation Quality\"?\s*:\s*\"([^\"]+)")
+        },
         "Detailed Analysis": {
             "In-depth Video Analysis": {
                 "Hook": extract_value(text, r"Hook\"?\s*:\s*\"([^\"]+)"),
@@ -629,6 +669,32 @@ def extract_list(text, pattern):
     items = match.group(1).split(',')
     return [item.strip().strip('"') for item in items if item.strip()]
 
+def extract_demographics(text, pattern):
+    """Extract demographic distribution using regex."""
+    match = re.search(pattern, text)
+    if not match:
+        return {}
+    
+    # Get the content inside the curly braces
+    content = match.group(1)
+    
+    # Find all key-value pairs
+    pairs = re.findall(r'\"?([\w\s\-\+]+)\"?\s*:\s*\"?(\d+(?:\.\d+)?)\"?', content)
+    
+    # Convert to a dictionary
+    result = {}
+    for key, value in pairs:
+        key = key.strip().strip('"')
+        try:
+            # Try to convert to float first, then int if there's no decimal part
+            float_val = float(value)
+            result[key] = float_val
+        except ValueError:
+            # If conversion fails, keep original string
+            result[key] = value
+    
+    return result
+
 # Test function for development
 def test_analysis(file_path=None):
     try:
@@ -672,6 +738,37 @@ def test_analysis(file_path=None):
                         print("\nKey Strengths:")
                         for i, strength in enumerate(strengths[:3], 1):
                             print(f"  {i}. {strength}")
+                
+                # Extract demographic information
+                demographics = analysis["analysis"].get("Demographic Analysis", {})
+                if demographics:
+                    print("\nDemographic Analysis:")
+                    
+                    # Gender distribution
+                    gender_dist = demographics.get("Gender Distribution", {})
+                    if gender_dist:
+                        print("\nGender Distribution:")
+                        for gender, percentage in gender_dist.items():
+                            print(f"  {gender}: {percentage}%")
+                    
+                    # Age distribution
+                    age_dist = demographics.get("Age Distribution", {})
+                    if age_dist:
+                        print("\nAge Distribution:")
+                        for age_range, percentage in age_dist.items():
+                            print(f"  {age_range}: {percentage}%")
+                    
+                    # Ethnicity distribution
+                    ethnicity_dist = demographics.get("Ethnicity Distribution", {})
+                    if ethnicity_dist:
+                        print("\nEthnicity Distribution:")
+                        for ethnicity, percentage in ethnicity_dist.items():
+                            print(f"  {ethnicity}: {percentage}%")
+                    
+                    # Representation quality
+                    representation = demographics.get("Representation Quality", "")
+                    if representation:
+                        print(f"\nRepresentation Quality: {representation}")
         
     except Exception as e:
         print(f"Analysis Error: {str(e)}")
