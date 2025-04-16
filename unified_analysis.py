@@ -455,12 +455,14 @@ Create a unified, comprehensive analysis that combines insights from both source
 # Emotional Analysis Guidelines:
 1. Create a detailed emotional_analysis section that includes:
    - dominant_emotions detected in the video
+   - emotion_percentages with an exact numerical percentage for each emotion (must add up to 100%)
    - emotional_arc describing how emotions evolve throughout the video
    - emotional_resonance_score (0-100) estimating emotional impact on viewers
    - confidence level in the emotional assessment
    - insights explaining the emotional impact and how it affects audience engagement
 2. Compare and reconcile emotional assessments from both analyses
 3. Look for emotion-related data in ClarifAI's analysis, which often has emotion detection capabilities
+4. IMPORTANT: Calculate precise percentages for each emotion listed in dominant_emotions
 
 # Contradiction Analysis Guidelines:
 1. Identify and document ALL key areas where Gemini and ClarifAI analyses significantly differ
@@ -688,6 +690,10 @@ You MUST respond using ONLY valid JSON in this EXACT structure. Ensure your outp
   }},
   "emotional_analysis": {{
     "dominant_emotions": ["Emotion 1", "Emotion 2"],
+    "emotion_percentages": {{
+      "Emotion 1": 60,
+      "Emotion 2": 40
+    }},
     "emotional_arc": "Description of emotional progression",
     "emotional_resonance_score": 0-100,
     "confidence": "High/Medium/Low",
@@ -1325,9 +1331,12 @@ def ensure_frontend_compatible_analysis(analysis: Dict[str, Any]) -> Dict[str, A
     if "emotional_analysis" not in analysis:
         analysis["emotional_analysis"] = {
             "dominant_emotions": ["Neutral"],
+            "emotion_percentages": {
+                "Neutral": 100
+            },
             "emotional_arc": "Not available",
             "emotional_resonance_score": 50,
-            "confidence": "Medium",
+            "confidence": "Low",
             "insights": "No emotional analysis data available"
         }
     
@@ -1447,10 +1456,44 @@ def fallback_merge(gemini_analysis: Dict[str, Any], clarifai_analysis: Dict[str,
     emotional_data = {
         "dominant_emotions": clarifai_analysis.get("emotional_analysis", {}).get("dominant_emotions", ["Neutral"]),
         "emotional_arc": clarifai_analysis.get("emotional_analysis", {}).get("emotional_arc", "Not available"),
-        "emotional_resonance_score": 50,
-        "confidence": "Medium",
-        "insights": "Limited emotional analysis data available"
+        "emotional_resonance_score": clarifai_analysis.get("emotional_analysis", {}).get("emotional_resonance_score", 50),
+        "confidence": clarifai_analysis.get("emotional_analysis", {}).get("confidence", "Medium"),
+        "insights": clarifai_analysis.get("emotional_analysis", {}).get("insights", "Limited emotional analysis data available")
     }
+    
+    # Calculate emotion percentages if not available
+    if "emotion_percentages" in clarifai_analysis.get("emotional_analysis", {}):
+        emotional_data["emotion_percentages"] = clarifai_analysis["emotional_analysis"]["emotion_percentages"]
+    else:
+        # Generate percentages based on dominant emotions position (first gets higher weight)
+        emotions = emotional_data["dominant_emotions"]
+        percentages = {}
+        
+        if len(emotions) == 0:
+            percentages["Neutral"] = 100
+        elif len(emotions) == 1:
+            percentages[emotions[0]] = 100
+        else:
+            # Distribute with decreasing weights
+            total_weight = 0
+            for i in range(len(emotions)):
+                weight = 100 / (i + 1)  # First gets 100, second gets 50, third gets 33.3, etc.
+                total_weight += weight
+            
+            # Normalize to 100%
+            for i, emotion in enumerate(emotions):
+                weight = 100 / (i + 1)
+                percentages[emotion] = round((weight / total_weight) * 100, 1)
+                
+            # Ensure they sum to 100%
+            total = sum(percentages.values())
+            if abs(total - 100) > 0.5:
+                # Adjust the highest value to make sum exactly 100
+                highest_emotion = max(percentages, key=percentages.get)
+                percentages[highest_emotion] += (100 - total)
+                percentages[highest_emotion] = round(percentages[highest_emotion], 1)
+        
+        emotional_data["emotion_percentages"] = percentages
     
     # Create a basic merged structure that matches what the frontend expects
     merged = {

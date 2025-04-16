@@ -256,7 +256,7 @@ For the Demographic Analysis section:
 For the Detailed Analysis section, include "In-depth Video Analysis" with these subsections:
 - Hook: Analyze the opening seconds and how effectively they grab attention.
 - Editing: Count the EXACT number of scene cuts/transitions in the video and calculate the average cuts per second. Describe the pacing, transitions, and overall editing style. For example "12 total cuts with approximately 0.5 cuts per second" or "8 total cuts with a cut every 3 seconds".
-- Tonality: Describe the emotional tone and mood of the advertisement.
+- Tonality: Describe the emotional tone and mood of the advertisement. Identify the dominant emotions (e.g., happiness, sadness, excitement) present in the video and assign an approximate percentage to each emotion (should add up to 100%).
 - Viral Potential: Rate each aspect on a scale of 0-100:
   * Visuals: Are they striking, unique, or highly appealing?
   * Emotion: Does it evoke strong emotional responses?
@@ -330,7 +330,7 @@ For the Demographic Analysis section:
 For the Detailed Analysis section, include "In-depth Video Analysis" with these subsections:
 - Hook: Analyze the opening seconds and how effectively they grab attention.
 - Editing: Count the EXACT number of scene cuts/transitions in the video and calculate the average cuts per second. Describe the pacing, transitions, and overall editing style. For example "12 total cuts with approximately 0.5 cuts per second" or "8 total cuts with a cut every 3 seconds".
-- Tonality: Describe the emotional tone and mood of the advertisement.
+- Tonality: Describe the emotional tone and mood of the advertisement. Identify the dominant emotions (e.g., happiness, sadness, excitement) present in the video and assign an approximate percentage to each emotion (should add up to 100%).
 - Viral Potential: Rate each aspect on a scale of 0-100:
   * Visuals: Are they striking, unique, or highly appealing?
   * Emotion: Does it evoke strong emotional responses?
@@ -401,6 +401,24 @@ def extract_json_from_response(response_text):
                     print(f"Warning: Missing field: {field}")
                     break
                 current = current[part]
+        
+        # Extract emotion percentages from Tonality if available
+        if "Detailed Analysis" in data and "In-depth Video Analysis" in data["Detailed Analysis"]:
+            tonality = data["Detailed Analysis"]["In-depth Video Analysis"].get("Tonality", "")
+            if tonality:
+                # Extract emotion percentages from Tonality text
+                emotion_percentages = extract_emotions(
+                    tonality, 
+                    r"(\d+%\s*[a-zA-Z]+|\b[a-zA-Z]+\s*\d+%)", 
+                    r"([\w\s]+):\s*(\d+)%"
+                )
+                
+                # Add emotion_percentages directly to the JSON
+                if emotion_percentages and "emotional_analysis" not in data:
+                    data["emotional_analysis"] = {
+                        "dominant_emotions": list(emotion_percentages.keys()),
+                        "emotion_percentages": emotion_percentages
+                    }
                 
         # Get the detailed text by removing the JSON block and any markdown formatting
         detailed_text = response_text
@@ -722,6 +740,7 @@ def extract_structured_data(text):
                 "Hook": extract_value(text, r"Hook\"?\s*:\s*\"([^\"]+)"),
                 "Editing": extract_value(text, r"Editing\"?\s*:\s*\"([^\"]+)"),
                 "Tonality": extract_value(text, r"Tonality\"?\s*:\s*\"([^\"]+)"),
+                "Emotion Percentages": extract_emotions(text, r"Tonality\"?\s*:.*?(\d+%\s*[a-zA-Z]+|\b[a-zA-Z]+\s*\d+%)", r"Tonality\"?\s*:.*?([\w\s]+):\s*(\d+)%"),
                 "Core Strengths": {
                     "Visuals": extract_value(text, r"Visuals\"?\s*:\s*\"([^\"]+)"),
                     "Content": extract_value(text, r"Content\"?\s*:\s*\"([^\"]+)"),
@@ -789,6 +808,49 @@ def extract_demographics(text, pattern):
             result[key] = value
     
     return result
+
+def extract_emotions(text, pattern1, pattern2):
+    """Extract emotion percentages from tonality section using regex."""
+    emotions = {}
+    
+    # First method: Look for structured emotion: percentage pattern
+    matches = re.findall(pattern2, text)
+    if matches:
+        for emotion, percentage in matches:
+            emotions[emotion.strip()] = int(percentage)
+        return emotions
+    
+    # Second method: Look for percentage and emotion mentions 
+    matches = re.findall(pattern1, text)
+    if matches:
+        for match in matches:
+            # Parse out the emotion and percentage
+            if '%' in match:
+                parts = match.split('%')
+                if parts[0].strip().isdigit():
+                    # Format: "50% happiness"
+                    percentage = int(parts[0].strip())
+                    emotion = parts[1].strip()
+                else:
+                    # Format: "happiness 50%"
+                    percentage = int(parts[1].strip())
+                    emotion = parts[0].strip()
+                emotions[emotion] = percentage
+    
+    # If we found emotions but they don't add up to 100%, normalize them
+    if emotions:
+        total = sum(emotions.values())
+        if total != 100:
+            for emotion in emotions:
+                emotions[emotion] = int(round((emotions[emotion] / total) * 100))
+            # Adjust to ensure sum is exactly 100
+            diff = 100 - sum(emotions.values())
+            if diff != 0:
+                # Add the difference to the largest emotion
+                max_emotion = max(emotions, key=emotions.get)
+                emotions[max_emotion] += diff
+    
+    return emotions
 
 # Test function for development
 def test_analysis(file_path=None):
